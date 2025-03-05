@@ -1,4 +1,4 @@
-# Bilingual Subtitle Merger (FFmpeg Edition)
+# Bilingual Subtitle Merger
 
 This Python script merges **Chinese** and **English** subtitles into a single synchronized subtitle track. It can:
 
