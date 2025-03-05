@@ -1,48 +1,96 @@
 # Bilingual Subtitle Merger
 
-A Python script to **automatically merge** English and Chinese subtitles into a single subtitle track. The script can handle both external `.srt` or `.ass` subtitle files or extract embedded subtitle tracks from `.mkv` containers via [MKVToolNix](https://mkvtoolnix.download/) utilities. It can also perform "bulk" operations on multiple `.mkv` files at once.
+A Python script to **automatically merge** English and Chinese subtitles into a single subtitle track. It can handle both external `.srt` or `.ass` subtitle files or **extract** embedded subtitle tracks from any container supported by:
+
+- [MKVToolNix](https://mkvtoolnix.download/) for **MKV** files  
+- [FFmpeg](https://ffmpeg.org/) for **MP4**, **MOV**, **AVI**, **FLV**, **TS**, and other containers  
+
+Additionally, it can perform **bulk operations** on all relevant video files in a folder.
+
+---
 
 ## Features
+
 1. **Automatic Detection**  
-   - Looks for **external** Chinese (`.zh.srt`, `.zh.ass`, etc.) or English (`.en.srt`, `.en.ass`, etc.) subtitle files in the same folder.  
-   - If no external file is found, it can extract them from **embedded** `.mkv` subtitle tracks (prompting the user to pick the correct track if necessary).
+   - Looks for **external** Chinese (`.zh.srt`, `.zh.ass`, etc.) or English (`.en.srt`, `.en.ass`, etc.) subtitle files **in the same folder**.  
+   - If no external file is found, the script will attempt to **extract** them from embedded tracks using `mkvextract` (for MKV) or `ffmpeg` (for everything else).  
+   - Prompts you to pick a track if multiple candidates match.
 
 2. **Multiple Formats**  
    - Supports merging and outputting as **SRT** (SubRip `.srt`) or **ASS** (Advanced SubStation Alpha `.ass`).
 
 3. **Bilingual Output**  
-   - SRT: Combines Chinese and English text at overlapping times into a single block (`Chinese\nEnglish`).  
-   - ASS: Places Chinese (top-aligned) and English (bottom-aligned) lines in separate styles, so they don’t visually overlap.
+   - **SRT**: Merges Chinese and English text by overlapping time segments, producing blocks with `Chinese\nEnglish`.  
+   - **ASS**: Utilizes two different styles (top-aligned for Chinese, bottom-aligned for English).
 
 4. **Heuristic Check for Forced/Partial Subtitles**  
-   - Warns if one track is significantly shorter than the other.
+   - Warns if one track is significantly shorter than the other (less than half the line count).
 
 5. **Bulk Mode**  
-   - Iterate over an entire folder of `.mkv` files and produce bilingual subtitles for each automatically.
+   - Automatically process an entire directory of media files (`.mkv`, `.mp4`, `.m4v`, `.mov`, `.avi`, `.flv`, `.ts`) to generate bilingual subtitles for each.
+
+6. **Flexible Container Support**  
+   - **MKV**: Uses `mkvmerge`/`mkvextract` to read and extract subtitles.  
+   - **MP4/MOV/AVI/etc.**: Uses **FFmpeg** to detect and extract embedded subtitles.
+
+7. **Naming Convention**  
+   - By default, if no output path is specified, the script creates **`<video_basename>.zh-en.srt`** or **`<video_basename>.zh-en.ass`**, ensuring easy identification in media players like Plex.
+
+---
 
 ## Requirements
 
 1. **Python 3**  
-   - Confirm you can run `python --version` or `python3 --version` in your terminal.
+   - Verify with `python --version` or `python3 --version`.
 
-2. **MKVToolNix**  
-   - [MKVToolNix](https://mkvtoolnix.download/) includes the `mkvextract` and `mkvmerge` commands required for embedded subtitle extraction.  
-   - Verify they’re in your system PATH:  
-     - **Windows**: open Command Prompt or PowerShell and run `mkvextract --version`.
-     - **Linux/Mac**: open Terminal and run `mkvextract --version`.  
-   - If not available, install from your package manager or [official downloads](https://mkvtoolnix.download/).
+2. **MKVToolNix** (for handling embedded subtitles in MKV):
+   - Install from official site or your package manager.  
+   - **Windows** (PowerShell):
+     ```powershell
+     winget install MoritzBunkus.MKVToolNix
+     ```
+   - **Linux**:
+     ```bash
+     sudo apt-get install mkvtoolnix
+     # or
+     sudo dnf install mkvtoolnix
+     ```
+   - **macOS**: [Download from official site](https://mkvtoolnix.download/).
 
-3. **UTF-8 Environment**  
-   - The script reads/writes subtitles in UTF-8. Usually modern systems are fine, but if you see encoding errors, ensure your locale is set to UTF-8 or use `chcp 65001` on Windows.
+   Ensure `mkvmerge` and `mkvextract` are in your PATH.
+
+3. **FFmpeg** (for handling embedded subtitles in MP4, MOV, etc.):
+   - Official site: <https://ffmpeg.org>  
+   - **Windows** (PowerShell):
+     ```powershell
+     winget install Gyan.FFmpeg
+     ```
+   - **Linux**:
+     ```bash
+     sudo apt-get install ffmpeg
+     ```
+   - **macOS**:
+     ```bash
+     brew install ffmpeg
+     ```
+   Make sure `ffmpeg` is available in your system PATH.
+
+4. **UTF-8 Environment**  
+   - Subtitles are processed in UTF-8. If you see encoding issues, set your locale to UTF-8.  
+   - On Windows, you can use `chcp 65001` in CMD or PowerShell.
+
+---
 
 ## Installation
 
-1. Download or copy the `bilingual_subtitle_merger.py` (the script above) onto your machine.
-2. Make it executable if on Linux/Mac:
+1. **Obtain the script**: Copy or download `bilingual_subtitle_merger.py`.
+2. **(Optional) Make executable** on Linux/macOS:
    ```bash
    chmod +x bilingual_subtitle_merger.py
    ```
-3. Ensure `mkvextract` and `mkvmerge` are installed and in your PATH.
+3. **Verify** that `mkvextract`/`mkvmerge` (if dealing with MKVs) **and** `ffmpeg` (for other containers) are accessible in your PATH.
+
+---
 
 ## Usage
 
@@ -50,156 +98,181 @@ A Python script to **automatically merge** English and Chinese subtitles into a 
 ```bash
 python bilingual_subtitle_merger.py [options]
 ```
-On some systems you might need `python3`:
+*(On some systems, you may need `python3`.)*  
 ```bash
 python3 bilingual_subtitle_merger.py [options]
 ```
 
 ### Command-Line Arguments
 
-- `-v, --video`  
-  Path to a **video file** (e.g. `.mkv`). The script will auto-detect or extract Chinese/English subs if not otherwise specified.
-
-- `-e, --english`  
-  Path to an **English subtitle** file (SRT or ASS). If given, the script will use this instead of searching for embedded or external subs.
-
-- `-c, --chinese`  
-  Path to a **Chinese subtitle** file (SRT or ASS). If given, the script will use this instead of searching for embedded or external subs.
-
-- `-o, --output`  
-  Output file path. If not specified, the script auto-generates a file named `<video_basename>.bilingual.srt` or `.ass`.
-
-- `-f, --format`  
-  Output subtitle format: `srt` or `ass`. Defaults to `srt`.
-
-- `--bulk`  
-  Processes **all** `.mkv` files in the current directory (or in the directory specified with `--video` if it’s a folder) in one go.  
+| Option               | Description                                                                                                 |
+|----------------------|-------------------------------------------------------------------------------------------------------------|
+| **-v, --video**      | Path to a video file (e.g. `.mkv`, `.mp4`). Will auto-detect or extract Chinese/English subs if none given. |
+| **-e, --english**    | Path to an external English subtitle (`.srt` or `.ass`).                                                    |
+| **-c, --chinese**    | Path to an external Chinese subtitle (`.srt` or `.ass`).                                                    |
+| **-o, --output**     | Path to output file (e.g. `MyBilingualSubs.srt`). Default: `<video_basename>.zh-en.srt`/`.ass`.            |
+| **-f, --format**     | Output format: `srt` or `ass`. Default is `srt`.                                                            |
+| **--bulk**           | Process **all** relevant media files in a directory.                                                        |
+| **--help**           | Show help text.                                                                                             |
 
 ### Operation Modes
 
-1. **External-Only**  
-   - Provide two external subtitle files via `-e` and `-c`.  
+1. **Merge External-Only**  
+   - Provide **both** `-e` and `-c` with no `-v`.  
    - Example:  
      ```bash
-     python bilingual_subtitle_merger.py -e Movie.en.srt -c Movie.zh.srt -o Movie.bilingual.srt
+     python bilingual_subtitle_merger.py -e Movie.en.srt -c Movie.zh.srt -o Movie.zh-en.srt
      ```
-   - This merges `Movie.en.srt` and `Movie.zh.srt` directly into a single bilingual file named `Movie.bilingual.srt`.
+   - Merges directly, ignoring embedded subtitles.
 
 2. **Single Video Auto**  
-   - Provide a single `.mkv` with `-v`. The script attempts to find or extract English and Chinese subtitles automatically.  
+   - Provide `-v <movie>` to detect or extract both languages.  
    - Example:
      ```bash
      python bilingual_subtitle_merger.py --video "Movie.mkv"
      ```
-     - Looks in the same folder for external `.en.srt`, `.zh.srt`, etc.  
-     - If not found, it scans embedded tracks in `Movie.mkv` and extracts whichever are recognized or manually chosen.
+     - Searches for external `.en.srt` / `.zh.srt` in the same folder.
+     - If not found, scans embedded tracks to pick English and Chinese.
 
-3. **Video with One External**  
-   - Provide `-v` plus either `-e` or `-c` if you already have one track as an external file. The script will fill in the other from external or embedded.  
+3. **Video + One External**  
+   - Supply `-v` plus `-e` **or** `-c`.  
    - Example:
      ```bash
-     python bilingual_subtitle_merger.py --video "Movie.mkv" --chinese "Movie.zh.ass"
+     python bilingual_subtitle_merger.py --video "Movie.mp4" --chinese "Movie.zh.ass"
      ```
-     - Will use `Movie.zh.ass` for the Chinese track.  
-     - For English, the script first tries to find `Movie.en.srt/ass` or an embedded English track.
+     - Uses the external `.ass` for Chinese.
+     - Searches or extracts English from `Movie.mp4`.
 
 4. **Bulk Mode**  
-   - Provide `--bulk` along with an optional directory or single `.mkv` via `--video`.  
+   - Use `--bulk` with an optional folder.  
    - Example:
      ```bash
-     # Process all .mkv files in the current directory:
      python bilingual_subtitle_merger.py --bulk
-     
-     # OR specify a folder:
-     python bilingual_subtitle_merger.py --video "/path/to/folder" --bulk
      ```
-   - For each `.mkv`, it attempts to locate or extract Chinese/English subs and generate a bilingual `.srt` (or `.ass`).
+     - Processes all `.mkv`, `.mp4`, etc. in the current folder.
+
+---
 
 ## Examples
 
-### Example 1: Merge Two External Subtitles
+### Example 1: Merge Two External SRT Files
 **Windows**:
 ```powershell
-python .\bilingual_subtitle_merger.py -e "MyMovie.en.srt" -c "MyMovie.zh.srt" -o "MyMovie.bilingual.srt"
+python .\bilingual_subtitle_merger.py -e "MyMovie.en.srt" -c "MyMovie.zh.srt" -o "MyMovie.zh-en.srt"
 ```
 **Linux/macOS**:
 ```bash
-python3 bilingual_subtitle_merger.py -e MyMovie.en.srt -c MyMovie.zh.srt -o MyMovie.bilingual.srt
+python3 bilingual_subtitle_merger.py -e MyMovie.en.srt -c MyMovie.zh.srt -o MyMovie.zh-en.srt
 ```
-- No `-v/--video` used here. This merges two external files directly.
+- No `-v/--video`. Just merges the two external files.
 
 ### Example 2: Single MKV With Embedded English, External Chinese
 ```bash
 python bilingual_subtitle_merger.py --video "MyMovie.mkv" --chinese "MyMovie.zh.srt"
 ```
 - Uses `MyMovie.zh.srt` for Chinese.  
-- Scans `MyMovie.mkv` for any embedded English track. If more than one is found, it prompts you to pick a track ID.
+- Searches the MKV for English subs. If multiple are found, prompts you to pick.
 
-### Example 3: Bulk Processing
+### Example 3: Bulk Mode on All Files in Current Directory
 ```bash
 python bilingual_subtitle_merger.py --bulk
 ```
-- In the current directory, every `.mkv` is processed automatically.  
-- The script tries to find (or extract) Chinese/English subs for each file, then writes e.g. `file1.bilingual.srt`, `file2.bilingual.srt`, etc.
+- Finds all `.mkv`, `.mp4`, `.mov`, etc. in the current folder.  
+- Attempts to produce `<filename>.zh-en.srt` or `.ass` for each.
 
-### Example 4: Output Format as ASS
+### Example 4: Force Output in ASS Format
 ```bash
 python bilingual_subtitle_merger.py -v "MyMovie.mkv" -f ass
 ```
-- Attempts to produce an **ASS** file instead of the default SRT, e.g. `MyMovie.bilingual.ass`.
+- Creates **`MyMovie.zh-en.ass`** with top-aligned Chinese and bottom-aligned English.
+
+---
 
 ## How It Works
 
-1. **Subtitle Gathering**  
-   - The script attempts to gather English (`--english`) and Chinese (`--chinese`) subtitles from (1) direct command-line arguments, (2) external files in the same folder as the video, or (3) embedded tracks in the `.mkv` file.
+1. **Collecting Subtitles**  
+   - Tries `--english`, `--chinese` if provided.  
+   - If those are missing, looks for external `.en.srt/.ass` or `.zh.srt/.ass` next to the video.  
+   - If still missing, tries **embedded** track extraction:  
+     - **MKV**: uses `mkvmerge`/`mkvextract`.  
+     - **MP4 / MOV / AVI / etc.**: uses `ffmpeg -i` to list tracks, then extracts the chosen one with `-map`.
 
 2. **Parsing**  
-   - SRT subtitles are read and split into time-coded “events”.  
-   - ASS subtitles are parsed, extracting the script info, styles, and dialogue lines.
+   - **SRT**: Splits based on numeric index and `HH:MM:SS,ms --> HH:MM:SS,ms`.  
+   - **ASS**: Reads styles, script info, and dialogue lines.
 
 3. **Merging**  
-   - **SRT**: The script calculates all unique start/end times from both language tracks, combines overlapping lines, and merges Chinese + English text in one block.  
-   - **ASS**: The script adds distinct styles for Chinese (top-aligned) and English (bottom-aligned) and writes each line as a separate Dialogue event.
+   - For **SRT**: calculates unique time segments across both languages, merging overlapping lines into a single block with line breaks.  
+   - For **ASS**: assigns a top style to Chinese, bottom style to English, and writes each line with the correct style.
 
-4. **Output**  
-   - The final combined subtitles are written as either `.srt` or `.ass`. A BOM (Byte Order Mark) is included to help some players/readers correctly detect UTF-8.
+4. **Writing Output**  
+   - Appends BOM (Byte Order Mark) to ensure most players see it as UTF-8.  
+   - Default name is `<video_basename>.zh-en.srt`/`.ass`.
 
-5. **Forced Track Detection**  
-   - If one subtitle track has significantly fewer lines (less than half), it warns that it might be a “forced” or partial track.
+5. **Forced Track Heuristic**  
+   - If one track is < 50% the line count of the other, warns it may be forced or partial.
+
+---
 
 ## Notes & Limitations
-- The script relies on simple heuristics to identify “Chinese” or “English” tracks within `.mkv`. If track metadata is incomplete or mislabeled, you may need to pick the right track manually in the prompt.
-- For ASS output, the styling is minimal: it sets a top style for Chinese and a bottom style for English. You can further customize the style lines as needed.
-- The script merges lines strictly by overlapping times (for SRT). If the original subs do not line up well in time, you may see slightly odd merges.
-- **mkvextract** only works on Matroska (`.mkv`) files. If your video is in a different container (e.g., `.mp4`), embedded-extraction features won’t apply.
 
-## Platform-Specific Instructions
+- **Manual Track Selection**  
+  If your tracks aren’t labeled properly, you’ll be prompted to choose from a list of subtitle streams.
+- **Minimal ASS Styling**  
+  The script sets two baseline styles (one top, one bottom). You can customize them further in the output `.ass` if desired.
+- **Time Overlaps**  
+  The merged lines in SRT rely on time overlap. If your subtitles are misaligned, you may see unexpected merges or splits.
+- **FFmpeg** is used for **non-MKV** containers. If your container isn’t recognized, try renaming to a standard extension or using `--english/--chinese` explicitly.
+
+---
+
+## Platform-Specific Notes
 
 ### Windows
-1. Install [Python 3 for Windows](https://www.python.org/downloads/).  
-2. Install [MKVToolNix for Windows](https://mkvtoolnix.download/downloads.html#windows). Ensure `mkvmerge.exe` and `mkvextract.exe` are in your PATH or in the same folder as your script.  
-3. Open PowerShell or Command Prompt, navigate to the script’s folder, and run:
+1. **Install Python 3** from [python.org](https://www.python.org/downloads/) or Windows Store.  
+2. **Install MKVToolNix** (if dealing with MKV):
+   ```powershell
+   winget install MoritzBunkus.MKVToolNix
+   ```
+3. **Install FFmpeg** (if dealing with MP4/MOV/etc.):
+   ```powershell
+   winget install Gyan.FFmpeg
+   ```
+4. Ensure `mkvextract`, `mkvmerge`, and `ffmpeg` are in your PATH or in the same folder as your script.  
+5. Run the script:
    ```powershell
    python .\bilingual_subtitle_merger.py --help
    ```
 
 ### Linux / macOS
-1. Install Python 3 from your package manager or [python.org](https://www.python.org/downloads/).  
-2. Install MKVToolNix:  
-   - **Ubuntu/Debian**:
-     ```bash
-     sudo apt-get install mkvtoolnix
-     ```
-   - **Fedora**:
-     ```bash
-     sudo dnf install mkvtoolnix
-     ```
-   - macOS: [Download from official site](https://mkvtoolnix.download/).  
-3. Run the script:
+1. **Install Python 3** (`sudo apt-get install python3`, `brew install python`, etc.).  
+2. **Install MKVToolNix** (for MKV):
+   ```bash
+   sudo apt-get install mkvtoolnix
+   # or for Fedora:
+   sudo dnf install mkvtoolnix
+   # macOS:
+   #   Download from https://mkvtoolnix.download/ or use homebrew
+   ```
+3. **Install FFmpeg**:
+   ```bash
+   sudo apt-get install ffmpeg
+   ```
+   or  
+   ```bash
+   brew install ffmpeg
+   ```
+4. Mark the script executable (optional):
    ```bash
    chmod +x bilingual_subtitle_merger.py
+   ```
+5. Run:
+   ```bash
    ./bilingual_subtitle_merger.py --help
    ```
 
+---
+
 ## License
-This script is provided *AS IS*, without warranty of any kind. Use at your own risk. You are free to modify and distribute as you see fit.
+
+This script is provided **AS IS**, without warranty of any kind. Use at your own risk. You are free to modify and distribute it as you see fit.
