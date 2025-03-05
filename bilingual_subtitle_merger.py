@@ -405,14 +405,14 @@ def merge_events_ass(chinese_events, english_events,
     return "\n".join(output_lines)
 
 def detect_forced_track(chinese_events, english_events):
-    """Heuristic: if one track has <50% lines compared to the other, label it forced."""
+    """Heuristic: if one track has <5% lines compared to the other, label it forced."""
     cn_count = len(chinese_events)
     en_count = len(english_events)
     if cn_count == 0 or en_count == 0:
         return None
-    if en_count < 0.5 * cn_count:
+    if en_count < 0.05 * cn_count:
         return "English"
-    if cn_count < 0.5 * en_count:
+    if cn_count < 0.05 * en_count:
         return "Chinese"
     return None
 
