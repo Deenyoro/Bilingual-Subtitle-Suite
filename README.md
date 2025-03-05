@@ -12,8 +12,8 @@ Below are example images demonstrating the output of the script:
 
 | Image                                             | Description                                       |
 |---------------------------------------------------|---------------------------------------------------|
-| ![Official Combined Subtitles](houseofficial.jpg) | *houseofficial.jpg* shows an example of official combined subtitles. |
-| ![Script Output](fma03script.png)                 | *fma03script.png* is produced by the script.      |
+| ![Official Combined Subtitles](example/houseofficial.jpg) | *houseofficial.jpg* shows an example of official combined subtitles. |
+| ![Script Output](example/fma03script.png)                 | *fma03script.png* is produced by the script.      |
 
 ---
 
