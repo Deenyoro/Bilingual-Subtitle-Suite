@@ -10,6 +10,7 @@ import shutil
 import sys
 import logging
 from pathlib import Path
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -17,17 +18,18 @@ logger = logging.getLogger("subtitle_merger")
 
 def parse_srt(file_path):
     """Parse an SRT file into a list of subtitle events."""
-    try:
-        with open(file_path, 'r', encoding='utf-8-sig', errors='replace') as f:
-            data = f.read()
-    except UnicodeDecodeError:
-        # Try with different encodings if utf-8 fails
+    encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'gbk', 'big5', 'shift-jis']
+    
+    for encoding in encodings:
         try:
-            with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
+            with open(file_path, 'r', encoding=encoding, errors='replace') as f:
                 data = f.read()
-        except Exception as e:
-            logger.error(f"Failed to read {file_path}: {e}")
-            return []
+            break
+        except Exception:
+            if encoding == encodings[-1]:
+                logger.error(f"Failed to read {file_path} with any encoding")
+                return []
+            continue
 
     blocks = re.split(r'\r?\n\r?\n', data.strip())
     events = []
@@ -74,7 +76,7 @@ def parse_ass(file_path):
     format_fields = []
     in_styles = in_events = False
 
-    encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
+    encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'gbk', 'big5', 'shift-jis']
     
     for encoding in encodings:
         try:
@@ -429,28 +431,31 @@ def is_video_container(file):
     ext = os.path.splitext(file)[1].lower()
     return ext in [".mkv", ".mp4", ".m4v", ".mov", ".avi", ".flv", ".ts", ".webm"]
 
-def run_command_safe(cmd, capture_output=True):
-    """Run a command with proper encoding error handling"""
+def run_command(cmd, capture_output=True):
+    """Run a command and return results with proper error handling"""
     try:
-        # Use universal_newlines=True for text mode in Python < 3.7
-        result = subprocess.run(
-            cmd, 
-            capture_output=capture_output, 
-            text=True, 
-            encoding='utf-8', 
-            errors='replace'
-        )
+        if capture_output:
+            result = subprocess.run(
+                cmd, 
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True, 
+                encoding='utf-8', 
+                errors='replace'
+            )
+        else:
+            result = subprocess.run(cmd)
         return result
     except subprocess.SubprocessError as e:
-        logger.error(f"Command failed: {' '.join(cmd)}")
-        logger.error(f"Error: {e}")
-        # Create a dummy result object
+        logger.debug(f"Command failed: {' '.join(cmd)}")
+        logger.debug(f"Error: {e}")
+        # Create a dummy result object with error info
         class DummyResult:
-            def __init__(self):
+            def __init__(self, error):
                 self.returncode = 1
                 self.stdout = ""
-                self.stderr = ""
-        return DummyResult()
+                self.stderr = f"Command execution failed: {error}"
+        return DummyResult(str(e))
 
 def list_tracks_mkv(mkv_file):
     """
@@ -458,187 +463,325 @@ def list_tracks_mkv(mkv_file):
     Returns list of dict: [{ 'track_id': '0', 'type': 'subtitles', 'lang': 'eng', 'title': '...' }, ...]
     """
     logger.info(f"Analyzing MKV tracks in: {os.path.basename(mkv_file)}")
-    cmd = ["mkvmerge", "--identify", mkv_file]
-    completed = run_command_safe(cmd)
-    
-    if completed.returncode != 0:
-        logger.warning(f"mkvmerge failed. Trying FFmpeg for track detection...")
-        return list_tracks_ffmpeg(mkv_file)
-
-    tracks = []
-    for line in completed.stdout.splitlines():
-        # Example: "Track ID 1: subtitles (S_TEXT/ASS) [language:eng, track_name:Signs]"
-        m = re.search(r"Track ID (\d+): (\w+) \(([^)]+)\).*?\[language:(\w+)(?:,\s*track_name:(.*?)\])?", line)
-        if m:
-            tid = m.group(1)
-            ttype = m.group(2)  # "subtitles" or "video"...
-            codec = m.group(3)  # S_TEXT/ASS, etc.
-            lang = m.group(4) or ""
-            tname = m.group(5) or ""
-            tracks.append({
-                'track_id': tid,
-                'type': ttype,
-                'codec': codec,
-                'lang': lang.lower(),
-                'title': tname.strip()
-            })
-    
-    # If no tracks found, try FFmpeg as fallback
-    if not tracks:
-        logger.warning("No tracks found with mkvmerge. Trying FFmpeg...")
-        return list_tracks_ffmpeg(mkv_file)
+    try:
+        cmd = ["mkvmerge", "--identify-verbose", mkv_file]
+        completed = run_command(cmd)
         
-    return tracks
+        if completed.returncode != 0:
+            logger.warning(f"mkvmerge failed with error: {completed.stderr}")
+            logger.warning("Trying FFmpeg for track detection...")
+            return list_tracks_ffmpeg(mkv_file)
+
+        tracks = []
+        track_data = {}
+        current_id = None
+        
+        for line in completed.stdout.splitlines():
+            # Track ID line example: "Track ID 2: subtitles (S_TEXT/ASS)"
+            track_id_match = re.search(r"Track ID (\d+): (\w+) \(([^)]+)\)", line)
+            if track_id_match:
+                # Save previous track if exists
+                if current_id is not None and track_data:
+                    tracks.append(track_data)
+                
+                # Start new track
+                current_id = track_id_match.group(1)
+                track_data = {
+                    'track_id': current_id,
+                    'type': track_id_match.group(2),  # "subtitles" or "video"...
+                    'codec': track_id_match.group(3),  # S_TEXT/ASS, etc.
+                    'lang': '',
+                    'title': ''
+                }
+                continue
+                
+            # Property lines like: "|+ Language: eng"
+            prop_match = re.search(r"\|\+ (\w+): (.*)", line)
+            if prop_match and current_id is not None:
+                prop_name = prop_match.group(1).lower()
+                prop_value = prop_match.group(2)
+                if prop_name == "language":
+                    track_data['lang'] = prop_value.lower()
+                elif prop_name == "track_name":
+                    track_data['title'] = prop_value
+        
+        # Don't forget to add the last track
+        if current_id is not None and track_data:
+            tracks.append(track_data)
+            
+        # If no tracks found, try FFmpeg as fallback
+        if not tracks:
+            logger.warning("No tracks found with mkvmerge. Trying FFmpeg...")
+            return list_tracks_ffmpeg(mkv_file)
+            
+        return tracks
+    
+    except Exception as e:
+        logger.error(f"Error analyzing MKV tracks: {e}")
+        logger.warning("Falling back to FFmpeg for track detection...")
+        return list_tracks_ffmpeg(mkv_file)
 
 def list_tracks_ffmpeg(media_file):
     """
-    Use ffmpeg -i <media_file> to list subtitle streams.
+    Use ffprobe to list subtitle streams.
     Returns a list of dict: [{ 'track_id': '0:2', 'type': 'subtitle', 'lang': 'eng', 'title': '' }, ...]
-    We'll store track_id as e.g. "0:2" to indicate the stream index for ffmpeg extraction.
     """
     logger.info(f"Analyzing streams with FFmpeg in: {os.path.basename(media_file)}")
+    
+    # First try with ffprobe (more detailed JSON output)
+    try:
+        # Try to get JSON output from ffprobe
+        cmd = [
+            "ffprobe", "-v", "quiet", "-print_format", "json", 
+            "-show_streams", "-show_format", media_file
+        ]
+        result = run_command(cmd)
+        
+        if result.returncode == 0 and result.stdout:
+            try:
+                data = json.loads(result.stdout)
+                tracks = []
+                
+                for i, stream in enumerate(data.get('streams', [])):
+                    if stream.get('codec_type') == 'subtitle':
+                        idx = f"{stream.get('index')}"
+                        lang = stream.get('tags', {}).get('language', '').lower()
+                        title = stream.get('tags', {}).get('title', '')
+                        codec = stream.get('codec_name', '')
+                        
+                        tracks.append({
+                            'track_id': idx,
+                            'type': 'subtitles',
+                            'codec': codec,
+                            'lang': lang,
+                            'title': title,
+                            'ffmpeg_idx': f"0:{idx}"  # Store FFmpeg stream specifier
+                        })
+                
+                if tracks:
+                    return tracks
+            except json.JSONDecodeError:
+                logger.debug("Failed to parse ffprobe JSON output")
+    except Exception as e:
+        logger.debug(f"ffprobe JSON parsing failed: {e}")
+    
+    # Fallback to regular ffmpeg output parsing
     cmd = ["ffmpeg", "-hide_banner", "-i", media_file]
-    completed = run_command_safe(cmd)
+    completed = run_command(cmd)
     
     # ffmpeg often exits with code 1 when just listing streams - that's normal
     stderr_output = completed.stderr or ""
 
     tracks = []
     # Looking for lines like: "Stream #0:2(eng): Subtitle: subrip (default)"
-    stream_regex = re.compile(r"^\s*Stream #(\d+:\d+)(?:\((\w+)\))?: Subtitle: ([^,]+)(.*)$", re.IGNORECASE)
+    stream_regex = re.compile(r"Stream #(\d+):(\d+)(?:\((\w+)\))?: Subtitle: ([^,]+)(.*)$", re.IGNORECASE)
     
     for line in stderr_output.splitlines():
-        match = stream_regex.match(line.strip())
+        match = stream_regex.search(line.strip())
         if match:
-            track_id_ff = match.group(1)  # "0:2"
-            track_lang  = match.group(2) or ""
-            codec_info  = match.group(3) or ""
-            extra_info  = match.group(4) or ""
+            file_idx = match.group(1)
+            stream_idx = match.group(2)
+            track_id = stream_idx  # Simplified for mkvextract compatibility
+            track_lang = match.group(3) or ""
+            codec_info = match.group(4) or ""
+            extra_info = match.group(5) or ""
             
-            # Try to extract title if present (e.g., "title : Signs") from extra_info
+            # Try to extract title if present
             title = ""
-            title_match = re.search(r"title\s*:\s*([^,]+)", extra_info, re.IGNORECASE)
+            title_match = re.search(r"title\s*:\s*([^,\(]+)", extra_info, re.IGNORECASE)
             if title_match:
                 title = title_match.group(1).strip()
             
             tracks.append({
-                'track_id': track_id_ff,
+                'track_id': track_id,
                 'type': 'subtitles',
                 'codec': codec_info,
                 'lang': track_lang.lower(),
-                'title': title
+                'title': title,
+                'ffmpeg_idx': f"{file_idx}:{stream_idx}"  # Store the FFmpeg stream specifier
             })
     
     return tracks
 
-def mediainfo_get_tracks(media_file):
-    """
-    Use mediainfo to get detailed track information.
-    Better for extracting track titles and other metadata.
-    """
-    try:
-        cmd = ["mediainfo", "--Output=JSON", media_file]
-        result = run_command_safe(cmd)
-        
-        if result.returncode != 0:
-            logger.warning("MediaInfo failed. Falling back to other methods.")
-            return None
-            
-        import json
-        data = json.loads(result.stdout)
-        
-        if "media" not in data or "track" not in data["media"]:
-            return None
-            
-        tracks = []
-        track_id = 0
-        
-        for track in data["media"]["track"]:
-            if track.get("@type") == "Text":
-                tracks.append({
-                    'track_id': str(track_id),
-                    'type': 'subtitles',
-                    'codec': track.get("Format", ""),
-                    'lang': track.get("Language", "").lower(),
-                    'title': track.get("Title", "")
-                })
-                track_id += 1
-                
-        return tracks
-    except Exception as e:
-        logger.warning(f"MediaInfo parsing error: {e}")
-        return None
-
 def extract_subtitle_mkv(mkv_file, track_id, out_path):
     """
     Extract a single subtitle track from MKV using mkvextract.
-    track_id is a string index, e.g. '0'.
+    The track_id should be a simple numeric index.
     """
+    # Make sure the track_id is just a number (mkvextract format)
+    # If it contains ":" (FFmpeg format), extract just the stream index
+    track_id_numeric = track_id
+    if ":" in track_id:
+        track_id_numeric = track_id.split(":")[-1]
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or '.', exist_ok=True)
+    
     logger.info(f"Extracting MKV track #{track_id} from '{os.path.basename(mkv_file)}' to '{os.path.basename(out_path)}'...")
-    cmd = ["mkvextract", "tracks", mkv_file, f"{track_id}:{out_path}"]
-    completed = run_command_safe(cmd)
     
-    if completed.returncode != 0:
-        logger.warning(f"mkvextract failed: {completed.stderr}")
-        logger.info("Trying FFmpeg extraction as fallback...")
-        # Convert track_id to FFmpeg format (0:N)
-        ff_track = f"0:{track_id}"
-        return extract_subtitle_ffmpeg(mkv_file, ff_track, out_path)
+    # First, validate the track exists
+    tracks = list_tracks_mkv(mkv_file)
+    valid_track_ids = [t['track_id'] for t in tracks if t.get('type', '').lower() in ('subtitles', 'subtitle')]
     
-    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-        logger.warning(f"Extracted file is empty or doesn't exist: {out_path}")
-        # Try FFmpeg as fallback
-        logger.info("Trying FFmpeg extraction as fallback...")
-        ff_track = f"0:{track_id}"
-        return extract_subtitle_ffmpeg(mkv_file, ff_track, out_path)
+    if track_id_numeric not in valid_track_ids:
+        logger.warning(f"Track ID {track_id} not found in MKV file. Available subtitle tracks: {valid_track_ids}")
+        # Try to find the track using FFmpeg indexing if mkvmerge failed
+        for t in tracks:
+            if 'ffmpeg_idx' in t and t['ffmpeg_idx'] == track_id:
+                track_id_numeric = t['track_id']
+                logger.info(f"Found matching track using FFmpeg index: {track_id_numeric}")
+                break
+        else:
+            logger.warning("Track not found, will try FFmpeg extraction directly")
+            return extract_subtitle_ffmpeg(mkv_file, track_id, out_path)
+    
+    # Create temporary directory for extraction
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Use a temporary filename to handle potential encoding issues
+        ext = os.path.splitext(out_path)[1].lower()
+        tmp_path = os.path.join(tmp_dir, f"track_{track_id_numeric}{ext}")
         
-    return out_path
+        # Run mkvextract to extract the track
+        cmd = ["mkvextract", "tracks", mkv_file, f"{track_id_numeric}:{tmp_path}"]
+        result = run_command(cmd)
+        
+        if result.returncode != 0:
+            logger.warning(f"mkvextract failed with code {result.returncode}")
+            logger.debug(f"mkvextract error: {result.stderr}")
+            logger.info("Trying FFmpeg extraction as fallback...")
+            # Try FFmpeg extraction as fallback
+            return extract_subtitle_ffmpeg(mkv_file, track_id, out_path)
+        
+        # Check if extraction was successful
+        if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+            # Copy from temporary path to final destination
+            try:
+                shutil.copy2(tmp_path, out_path)
+                logger.info(f"Successfully extracted subtitle to {os.path.basename(out_path)}")
+                return out_path
+            except Exception as e:
+                logger.error(f"Failed to copy extracted subtitle: {e}")
+        else:
+            logger.warning("mkvextract produced no output or empty file")
+    
+    # If we got here, mkvextract failed - try FFmpeg
+    logger.info("Trying FFmpeg extraction as fallback...")
+    return extract_subtitle_ffmpeg(mkv_file, track_id, out_path)
 
 def extract_subtitle_ffmpeg(media_file, track_id, out_path):
     """
-    Extract a single subtitle track from non-MKV using ffmpeg.
-    track_id is like "0:2".
-    We'll extract as .ass so we preserve formatting if possible.
+    Extract subtitle using FFmpeg.
+    track_id can be a simple index like "2" or FFmpeg format like "0:2".
     """
-    logger.info(f"Extracting FFmpeg track {track_id} from '{os.path.basename(media_file)}' to '{os.path.basename(out_path)}'...")
+    # Normalize track ID for FFmpeg mapping
+    ffmpeg_track = track_id
+    if ":" not in track_id:
+        # Simple numeric track ID needs to be converted to FFmpeg format
+        ffmpeg_track = f"0:{track_id}"
     
-    # Ensure the output extension matches the format
-    out_ext = os.path.splitext(out_path)[1].lower()
-    if out_ext != '.ass' and out_ext != '.srt':
-        out_path = os.path.splitext(out_path)[0] + '.ass'
+    # Create output directory if it doesn't exist
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or '.', exist_ok=True)
     
-    # We'll try to force an ASS output to parse consistently
-    cmd = [
-        "ffmpeg", "-y", "-i", media_file,
-        "-map", track_id,
-        "-c:s", "ass",
-        out_path
-    ]
+    # Get the desired output format from the file extension
+    base, ext = os.path.splitext(out_path)
+    if not ext:
+        ext = ".ass"  # Default to ASS if no extension
+        out_path = base + ext
     
-    completed = run_command_safe(cmd)
+    logger.info(f"Extracting FFmpeg track {ffmpeg_track} from '{os.path.basename(media_file)}' to '{os.path.basename(out_path)}'...")
     
-    # Check if the file was created successfully
-    if completed.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-        # Try extracting as SRT as fallback
-        logger.info("ASS extraction failed, trying SRT format...")
-        out_path_srt = os.path.splitext(out_path)[0] + '.srt'
-        cmd = [
-            "ffmpeg", "-y", "-i", media_file,
-            "-map", track_id,
-            "-c:s", "srt",
-            out_path_srt
-        ]
-        completed = run_command_safe(cmd)
+    # First verify the track exists using FFmpeg probe
+    tracks = list_tracks_ffmpeg(media_file)
+    valid_tracks = [t for t in tracks if t.get('type', '').lower() in ('subtitles', 'subtitle')]
+    
+    # Check if our track exists in any form (direct ID or ffmpeg_idx)
+    track_to_use = None
+    for t in valid_tracks:
+        if t['track_id'] == track_id or t.get('ffmpeg_idx') == ffmpeg_track:
+            track_to_use = t.get('ffmpeg_idx', ffmpeg_track)
+            break
+    
+    if not track_to_use:
+        logger.warning(f"Track {track_id} not found in {os.path.basename(media_file)}")
+        logger.info("Available subtitle tracks:")
+        for t in valid_tracks:
+            logger.info(f"  - Track ID: {t['track_id']}, Lang: {t.get('lang', '')}, Title: {t.get('title', '')}")
+        return None
+    
+    ffmpeg_track = track_to_use  # Use the verified FFmpeg track specifier
+    
+    # Try different subtitle formats based on the extension
+    formats_to_try = []
+    if ext.lower() == '.ass':
+        formats_to_try = [('ass', '.ass'), ('ssa', '.ssa'), ('srt', '.srt')]
+    elif ext.lower() == '.srt':
+        formats_to_try = [('srt', '.srt'), ('ass', '.ass'), ('ssa', '.ssa')]
+    else:
+        formats_to_try = [(ext[1:], ext)]  # Use the specified extension
+    
+    # Create a temporary directory for extraction
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        for subtitle_format, format_ext in formats_to_try:
+            tmp_path = os.path.join(tmp_dir, f"subtitle{format_ext}")
+            
+            # Build FFmpeg command
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", media_file,
+                "-map", ffmpeg_track,
+                "-c:s", subtitle_format,
+                tmp_path
+            ]
+            
+            logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
+            
+            # Run FFmpeg
+            result = run_command(cmd)
+            
+            # Check if extraction succeeded
+            if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+                # Copy from temporary path to final destination
+                try:
+                    # If the format extension doesn't match the requested one, change the output path
+                    final_out = out_path
+                    if format_ext.lower() != ext.lower():
+                        final_out = base + format_ext
+                    
+                    shutil.copy2(tmp_path, final_out)
+                    logger.info(f"Successfully extracted to {os.path.basename(final_out)} using format {subtitle_format}")
+                    return final_out
+                except Exception as e:
+                    logger.error(f"Failed to copy extracted subtitle: {e}")
+                    continue
+            else:
+                logger.debug(f"FFmpeg format {subtitle_format} extraction failed: {result.stderr}")
         
-        if completed.returncode == 0 and os.path.exists(out_path_srt) and os.path.getsize(out_path_srt) > 0:
-            logger.info(f"Successfully extracted to SRT: {out_path_srt}")
-            return out_path_srt
+        # If all formats failed, try a direct stream copy as a last resort
+        tmp_path = os.path.join(tmp_dir, f"subtitle_copy{ext}")
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", media_file,
+            "-map", ffmpeg_track,
+            "-c:s", "copy",
+            tmp_path
+        ]
+        
+        logger.debug(f"Trying direct stream copy: {' '.join(cmd)}")
+        result = run_command(cmd)
+        
+        if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+            try:
+                shutil.copy2(tmp_path, out_path)
+                logger.info(f"Successfully extracted to {os.path.basename(out_path)} using direct stream copy")
+                return out_path
+            except Exception as e:
+                logger.error(f"Failed to copy extracted subtitle: {e}")
         else:
-            logger.warning(f"Subtitle extraction failed for track {track_id}")
-            return None
+            logger.debug(f"FFmpeg direct copy failed: {result.stderr}")
     
-    logger.info(f"Successfully extracted to: {out_path}")
-    return out_path
+    # If all extraction attempts failed
+    logger.error(f"Subtitle extraction failed for track {track_id}")
+    return None
 
 def guess_embedded_subtitle(video_file, is_chinese=False, remap_lang=None, prefer_track=None):
     """
@@ -651,10 +794,7 @@ def guess_embedded_subtitle(video_file, is_chinese=False, remap_lang=None, prefe
         prefer_track: Specific track number to use (overrides other selection logic)
     
     Returns:
-        track_id in a container-appropriate format:
-          - for MKV: "0", "1", ...
-          - for FFmpeg: "0:2", etc.
-        or None if none found.
+        track_id in a container-appropriate format or None if none found.
     """
     if not os.path.exists(video_file):
         logger.error(f"Video file does not exist: {video_file}")
@@ -665,41 +805,30 @@ def guess_embedded_subtitle(video_file, is_chinese=False, remap_lang=None, prefe
         logger.info(f"Using user-specified track: {prefer_track}")
         return prefer_track
     
-    # Try MediaInfo first for detailed info
-    mediainfo_tracks = mediainfo_get_tracks(video_file)
-    
-    # Then try mkvmerge or ffmpeg
+    # Get all tracks from the video file
     if is_mkv(video_file):
         tracks = list_tracks_mkv(video_file)
     else:
         tracks = list_tracks_ffmpeg(video_file)
     
-    # If MediaInfo succeeded, merge the track info for better metadata
-    if mediainfo_tracks:
-        # Enhance tracks with MediaInfo data if possible
-        for i, track in enumerate(tracks):
-            if i < len(mediainfo_tracks):
-                # Add or update title from MediaInfo
-                if mediainfo_tracks[i].get('title') and not track.get('title'):
-                    track['title'] = mediainfo_tracks[i]['title']
-        
-    sub_tracks = [t for t in tracks if t.get('type', '').lower().startswith("sub")]
+    # Filter for subtitle tracks only
+    sub_tracks = [t for t in tracks if t.get('type', '').lower() in ('subtitles', 'subtitle')]
     
     if not sub_tracks:
         logger.warning(f"No subtitle tracks found in {os.path.basename(video_file)}")
         return None
         
-    # For Chinese, we look for chi/zho/chs/cht/... or remapped language
-    # For English, we look for eng or remapped language
+    # Define language codes to look for
     if is_chinese:
-        possible_codes = ["chi", "zho", "chs", "cht", "chinese"] 
+        possible_codes = ["chi", "zho", "chs", "cht", "zh", "chinese"] 
         if remap_lang:
             possible_codes.append(remap_lang.lower())
     else:
-        possible_codes = ["eng", "english"]
+        possible_codes = ["eng", "en", "english"]
         if remap_lang:
             possible_codes.append(remap_lang.lower())
     
+    # Find tracks that match by language or title
     matched = []
     
     for t in sub_tracks:
@@ -715,26 +844,30 @@ def guess_embedded_subtitle(video_file, is_chinese=False, remap_lang=None, prefe
         logger.info(f"Multiple candidate {'Chinese' if is_chinese else 'English'} tracks in {os.path.basename(video_file)}:")
         for i, track in enumerate(matched, start=1):
             logger.info(f"{i}) track_id={track['track_id']}, lang={track.get('lang', '')}, title={track.get('title', '')}")
-        choice = input("Pick track number (or Enter to skip): ").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(matched):
-            return matched[int(choice)-1]['track_id']
-        return None
+        
+        # Default to the first track rather than requiring interactive input
+        logger.info(f"Automatically selecting track #{matched[0]['track_id']}")
+        return matched[0]['track_id']
     else:
         # No direct matches - list all available subtitle tracks
         logger.info(f"No direct match found for {'Chinese' if is_chinese else 'English'} in {os.path.basename(video_file)}.")
+        logger.info("Available subtitle tracks:")
         for i, track in enumerate(sub_tracks, start=1):
             logger.info(f"{i}) track_id={track['track_id']}, lang={track.get('lang', '')}, title={track.get('title', '')}")
-        choice = input("Pick track number (or Enter to skip): ").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(sub_tracks):
-            return sub_tracks[int(choice)-1]['track_id']
+        
+        # Return None to indicate no suitable track was found
         return None
 
 def extract_subtitle_track(video_file, track_id, out_path):
     """
-    Extract the given track from video_file to out_path, depending on container.
-    For MKV => mkvextract
-    For others => ffmpeg
+    Extract the given track from video_file to out_path.
+    For MKV files, first tries mkvextract then falls back to FFmpeg.
+    For other formats, uses FFmpeg directly.
     """
+    if not track_id:
+        logger.error("No track ID provided for extraction")
+        return None
+        
     if is_mkv(video_file):
         result = extract_subtitle_mkv(video_file, track_id, out_path)
         return result
@@ -832,19 +965,6 @@ def process_one_video(video_path, eng_sub=None, chi_sub=None,
     """
     Merge English/Chinese subs into one track. If eng_sub or chi_sub is None,
     the script attempts to find or extract them from video_path or external files.
-    
-    Args:
-        video_path: Path to the video file
-        eng_sub: Path to English subtitle file (optional)
-        chi_sub: Path to Chinese subtitle file (optional)
-        out_format: Output format ('srt' or 'ass')
-        out_file: Output file path (optional)
-        remap_eng: Language code to treat as English (e.g., 'jpn')
-        remap_chi: Language code to treat as Chinese (e.g., 'jpn')
-        eng_track: Specific track number to use for English
-        chi_track: Specific track number to use for Chinese
-        prefer_external: Prefer external subtitles over embedded ones
-        prefer_embedded: Prefer embedded subtitles over external ones
     """
     logger.info(f"Processing video: {os.path.basename(video_path)}")
     
@@ -999,6 +1119,8 @@ def main():
     
     parser.add_argument("--debug", action="store_true",
                         help="Enable debug logging")
+    
+    # Parse arguments
     args = parser.parse_args()
 
     if args.debug:
@@ -1015,10 +1137,10 @@ def main():
             files = []
             for ext in exts:
                 files.extend(glob.glob(os.path.join(path, ext)))
-        elif os.path.isfile(path):
+        elif os.path.isfile(path) and is_video_container(path):
             files = [path]
         else:
-            logger.error(f"Path not found: {path}")
+            logger.error(f"Path not found or not a video file: {path}")
             sys.exit(1)
 
         if not files:
@@ -1026,7 +1148,7 @@ def main():
             sys.exit(0)
 
         for media_file in sorted(files):
-            print(f"\n=== Processing: {media_file} ===")
+            print(f"\n=== Processing: {os.path.basename(media_file)} ===")
             try:
                 process_one_video(
                     media_file,
@@ -1048,6 +1170,11 @@ def main():
 
     # Non-bulk mode
     if args.video:
+        # Validate video file exists
+        if not os.path.isfile(args.video):
+            logger.error(f"Video file not found: {args.video}")
+            sys.exit(1)
+            
         # Merge with possible embedded detection
         try:
             process_one_video(
@@ -1068,8 +1195,8 @@ def main():
             sys.exit(1)
     else:
         # If only external subs given
-        if not args.english or not args.chinese:
-            logger.error("ERROR: Provide both --english and --chinese, or use --video, or use --bulk.")
+        if not args.english and not args.chinese:
+            logger.error("ERROR: Provide at least one of --english or --chinese, or use --video, or use --bulk.")
             sys.exit(1)
 
         # Merge external files directly
@@ -1078,32 +1205,45 @@ def main():
 
         # Parse them
         def is_srt(file):
-            return file.lower().endswith(".srt")
+            return file and file.lower().endswith(".srt")
         def is_ass(file):
-            return file.lower().endswith(".ass") or file.lower().endswith(".ssa")
+            return file and (file.lower().endswith(".ass") or file.lower().endswith(".ssa"))
 
-        eng_events = chi_events = []
-        eng_styles = chi_styles = []
-        script_info_eng = script_info_chi = []
+        eng_events = []
+        chi_events = []
+        eng_styles = []
+        chi_styles = []
+        script_info_eng = []
+        script_info_chi = []
 
         try:
-            if is_srt(eng_file):
-                eng_events = parse_srt(eng_file)
-            elif is_ass(eng_file):
-                eev, esty, sinfo = parse_ass(eng_file)
-                eng_events, eng_styles, script_info_eng = eev, esty, sinfo
-            else:
-                logger.error(f"Unsupported English subtitle format: {eng_file}")
-                sys.exit(1)
+            if eng_file:
+                if not os.path.isfile(eng_file):
+                    logger.error(f"English subtitle file not found: {eng_file}")
+                    sys.exit(1)
+                    
+                if is_srt(eng_file):
+                    eng_events = parse_srt(eng_file)
+                elif is_ass(eng_file):
+                    eev, esty, sinfo = parse_ass(eng_file)
+                    eng_events, eng_styles, script_info_eng = eev, esty, sinfo
+                else:
+                    logger.error(f"Unsupported English subtitle format: {eng_file}")
+                    sys.exit(1)
 
-            if is_srt(chi_file):
-                chi_events = parse_srt(chi_file)
-            elif is_ass(chi_file):
-                cev, csty, sinfo = parse_ass(chi_file)
-                chi_events, chi_styles, script_info_chi = cev, csty, sinfo
-            else:
-                logger.error(f"Unsupported Chinese subtitle format: {chi_file}")
-                sys.exit(1)
+            if chi_file:
+                if not os.path.isfile(chi_file):
+                    logger.error(f"Chinese subtitle file not found: {chi_file}")
+                    sys.exit(1)
+                    
+                if is_srt(chi_file):
+                    chi_events = parse_srt(chi_file)
+                elif is_ass(chi_file):
+                    cev, csty, sinfo = parse_ass(chi_file)
+                    chi_events, chi_styles, script_info_chi = cev, csty, sinfo
+                else:
+                    logger.error(f"Unsupported Chinese subtitle format: {chi_file}")
+                    sys.exit(1)
         except Exception as e:
             logger.error(f"Error parsing subtitle files: {e}")
             sys.exit(1)
