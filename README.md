@@ -44,7 +44,7 @@ This Python script merges **Chinese** and **English** subtitles into a single sy
      - A bottom-aligned style for English text.
 
 4. **Heuristic Forced-Track Check**  
-   - If one subtitle track is <50% the number of lines as the other, the script warns that it might be a “forced” (partial) subtitle.
+   - If one subtitle track is <5% the number of lines as the other, the script warns that it might be a “forced” (partial) subtitle.
 
 5. **Bulk Mode**  
    - Processes all media files (`.mkv`, `.mp4`, `.mov`, etc.) in a given directory for **batch merging**.
