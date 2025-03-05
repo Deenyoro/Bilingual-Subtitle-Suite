@@ -8,12 +8,27 @@ import glob
 import tempfile
 import shutil
 import sys
+import logging
+from pathlib import Path
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+logger = logging.getLogger("subtitle_merger")
 
 def parse_srt(file_path):
     """Parse an SRT file into a list of subtitle events."""
-    import re
-    with open(file_path, 'r', encoding='utf-8-sig') as f:
-        data = f.read()
+    try:
+        with open(file_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+            data = f.read()
+    except UnicodeDecodeError:
+        # Try with different encodings if utf-8 fails
+        try:
+            with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
+                data = f.read()
+        except Exception as e:
+            logger.error(f"Failed to read {file_path}: {e}")
+            return []
+
     blocks = re.split(r'\r?\n\r?\n', data.strip())
     events = []
     for block in blocks:
@@ -59,8 +74,18 @@ def parse_ass(file_path):
     format_fields = []
     in_styles = in_events = False
 
-    with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
-        lines = f.readlines()
+    encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
+    
+    for encoding in encodings:
+        try:
+            with open(file_path, 'r', encoding=encoding, errors='replace') as f:
+                lines = f.readlines()
+            break
+        except Exception as e:
+            if encoding == encodings[-1]:
+                logger.error(f"Failed to read {file_path} with any encoding: {e}")
+                return [], [], []
+            continue
 
     for line in lines:
         line = line.rstrip('\r\n')
@@ -327,20 +352,49 @@ def detect_forced_track(chinese_events, english_events):
 def is_mkv(file):
     return file.lower().endswith(".mkv")
 
-def is_mp4(file):
-    # For simplicity, treat .mp4/.m4v/.mov similarly
+def is_avi(file):
+    return file.lower().endswith(".avi")
+
+def is_video_container(file):
+    # For simplicity, treat various containers similarly
     ext = os.path.splitext(file)[1].lower()
-    return ext in [".mp4", ".m4v", ".mov", ".avi", ".flv", ".ts"]
+    return ext in [".mkv", ".mp4", ".m4v", ".mov", ".avi", ".flv", ".ts", ".webm"]
+
+def run_command_safe(cmd, capture_output=True):
+    """Run a command with proper encoding error handling"""
+    try:
+        # Use universal_newlines=True for text mode in Python < 3.7
+        result = subprocess.run(
+            cmd, 
+            capture_output=capture_output, 
+            text=True, 
+            encoding='utf-8', 
+            errors='replace'
+        )
+        return result
+    except subprocess.SubprocessError as e:
+        logger.error(f"Command failed: {' '.join(cmd)}")
+        logger.error(f"Error: {e}")
+        # Create a dummy result object
+        class DummyResult:
+            def __init__(self):
+                self.returncode = 1
+                self.stdout = ""
+                self.stderr = ""
+        return DummyResult()
 
 def list_tracks_mkv(mkv_file):
     """
     Parse mkvmerge --identify to list tracks.
     Returns list of dict: [{ 'track_id': '0', 'type': 'subtitles', 'lang': 'eng', 'title': '...' }, ...]
     """
+    logger.info(f"Analyzing MKV tracks in: {os.path.basename(mkv_file)}")
     cmd = ["mkvmerge", "--identify", mkv_file]
-    completed = subprocess.run(cmd, capture_output=True, text=True)
+    completed = run_command_safe(cmd)
+    
     if completed.returncode != 0:
-        raise RuntimeError(f"Failed to identify tracks in {mkv_file}.\n{completed.stderr}")
+        logger.warning(f"Failed to identify tracks in {mkv_file}.")
+        return []
 
     tracks = []
     for line in completed.stdout.splitlines():
@@ -365,31 +419,30 @@ def list_tracks_ffmpeg(media_file):
     Returns a list of dict: [{ 'track_id': '0:2', 'type': 'subtitle', 'lang': 'eng', 'title': '' }, ...]
     We'll store track_id as e.g. "0:2" to indicate the stream index for ffmpeg extraction.
     """
+    logger.info(f"Analyzing streams with FFmpeg in: {os.path.basename(media_file)}")
     cmd = ["ffmpeg", "-hide_banner", "-i", media_file]
-    completed = subprocess.run(cmd, capture_output=True, text=True)
-    if completed.returncode != 0 and completed.returncode != 1:
-        # ffmpeg often returns 1 if it can't transcode. We only need stream info
-        raise RuntimeError(f"Failed to analyze {media_file} with ffmpeg.\n{completed.stderr}")
+    completed = run_command_safe(cmd)
+    
+    # ffmpeg often exits with code 1 when just listing streams - that's normal
+    stderr_output = completed.stderr or ""
 
-    lines = completed.stderr.splitlines()
-    # Looking for lines like: "Stream #0:2(eng): Subtitle: subrip (default)"
-    # or "Stream #0:3(chi): Subtitle: ass..."
     tracks = []
-    # We'll parse "Stream #0:X(...)"
-    stream_regex = re.compile(r"^(\s*)Stream #(\d+:\d+)(?:\((\w+)\))?: Subtitle: ([^,]+)(.*)$", re.IGNORECASE)
-    for line in lines:
+    # Looking for lines like: "Stream #0:2(eng): Subtitle: subrip (default)"
+    stream_regex = re.compile(r"^\s*Stream #(\d+:\d+)(?:\((\w+)\))?: Subtitle: ([^,]+)(.*)$", re.IGNORECASE)
+    
+    for line in stderr_output.splitlines():
         match = stream_regex.match(line.strip())
         if match:
-            track_id_ff = match.group(2)  # "0:2"
-            track_lang  = match.group(3) or ""
+            track_id_ff = match.group(1)  # "0:2"
+            track_lang  = match.group(2) or ""
             track_type  = "subtitles"  # We only parse subtitle lines
-            # The "rest" might show 'default' or 'forced'
             tracks.append({
                 'track_id': track_id_ff,
                 'type': track_type,
                 'lang': track_lang.lower(),
                 'title': ""  # ffmpeg doesn't easily expose track_name
             })
+    
     return tracks
 
 def extract_subtitle_mkv(mkv_file, track_id, out_path):
@@ -397,31 +450,63 @@ def extract_subtitle_mkv(mkv_file, track_id, out_path):
     Extract a single subtitle track from MKV using mkvextract.
     track_id is a string index, e.g. '0'.
     """
-    print(f"Extracting MKV track #{track_id} from '{mkv_file}' to '{out_path}'...")
+    logger.info(f"Extracting MKV track #{track_id} from '{os.path.basename(mkv_file)}' to '{os.path.basename(out_path)}'...")
     cmd = ["mkvextract", "tracks", mkv_file, f"{track_id}:{out_path}"]
-    completed = subprocess.run(cmd, capture_output=True, text=True)
+    completed = run_command_safe(cmd)
+    
     if completed.returncode != 0:
-        raise RuntimeError(f"mkvextract failed.\n{completed.stderr}")
+        raise RuntimeError(f"mkvextract failed: {completed.stderr}")
+    
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        logger.warning(f"Extracted file is empty or doesn't exist: {out_path}")
+        return False
+    return True
 
 def extract_subtitle_ffmpeg(media_file, track_id, out_path):
     """
     Extract a single subtitle track from non-MKV using ffmpeg.
     track_id is like "0:2".
     We'll extract as .ass so we preserve formatting if possible.
-    (Then we'll parse it in Python.)
     """
-    print(f"Extracting FFmpeg track {track_id} from '{media_file}' to '{out_path}'...")
+    logger.info(f"Extracting FFmpeg track {track_id} from '{os.path.basename(media_file)}' to '{os.path.basename(out_path)}'...")
+    
+    # Ensure the output extension matches the format
+    out_ext = os.path.splitext(out_path)[1].lower()
+    if out_ext != '.ass' and out_ext != '.srt':
+        out_path = os.path.splitext(out_path)[0] + '.ass'
+    
     # We'll try to force an ASS output to parse consistently
-    # If you prefer SRT for intermediate, just switch -c:s ass -> -c:s srt
     cmd = [
         "ffmpeg", "-y", "-i", media_file,
-        "-map", f"{track_id}",  # e.g. "0:2"
+        "-map", track_id,
         "-c:s", "ass",
         out_path
     ]
-    completed = subprocess.run(cmd, capture_output=True, text=True)
-    if completed.returncode != 0:
-        raise RuntimeError(f"ffmpeg extraction failed.\n{completed.stderr}")
+    
+    completed = run_command_safe(cmd)
+    
+    # Check if the file was created successfully
+    if completed.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        # Try extracting as SRT as fallback
+        logger.info("ASS extraction failed, trying SRT format...")
+        out_path_srt = os.path.splitext(out_path)[0] + '.srt'
+        cmd = [
+            "ffmpeg", "-y", "-i", media_file,
+            "-map", track_id,
+            "-c:s", "srt",
+            out_path_srt
+        ]
+        completed = run_command_safe(cmd)
+        
+        if completed.returncode == 0 and os.path.exists(out_path_srt) and os.path.getsize(out_path_srt) > 0:
+            logger.info(f"Successfully extracted to SRT: {out_path_srt}")
+            return out_path_srt
+        else:
+            logger.warning(f"Subtitle extraction failed for track {track_id}")
+            return False
+    
+    logger.info(f"Successfully extracted to: {out_path}")
+    return out_path
 
 def guess_embedded_subtitle(video_file, is_chinese=False):
     """
@@ -430,76 +515,92 @@ def guess_embedded_subtitle(video_file, is_chinese=False):
       - for MKV: "0", "1", ...
       - for FFmpeg: "0:2", etc.
     or None if none found.
-    This will prompt if multiple matches are found.
     """
+    if not os.path.exists(video_file):
+        logger.error(f"Video file does not exist: {video_file}")
+        return None
+        
     if is_mkv(video_file):
-        tracks = list_tracks_mkv(video_file)
-        sub_tracks = [t for t in tracks if t['type'].lower().startswith("sub")]
-        if not sub_tracks:
-            return None
-        # For Chinese, we look for chi/zho/chs/cht/...
-        # For English, we look for eng
-        possible_codes = ["chi","zho","chs","cht","chinese"] if is_chinese else ["eng","english"]
-        matched = []
-        for t in sub_tracks:
-            text = f"{t['lang']} {t['title']}".lower()
-            if any(code in text for code in possible_codes):
-                matched.append(t)
+        try:
+            tracks = list_tracks_mkv(video_file)
+            sub_tracks = [t for t in tracks if t['type'].lower().startswith("sub")]
+            
+            if not sub_tracks:
+                return None
+                
+            # For Chinese, we look for chi/zho/chs/cht/...
+            # For English, we look for eng
+            possible_codes = ["chi","zho","chs","cht","chinese"] if is_chinese else ["eng","english"]
+            matched = []
+            
+            for t in sub_tracks:
+                text = f"{t['lang']} {t['title']}".lower()
+                if any(code in text for code in possible_codes):
+                    matched.append(t)
 
-        if len(matched) == 1:
-            return matched[0]['track_id']
-        elif len(matched) > 1:
-            # prompt
-            print(f"Multiple candidate {'Chinese' if is_chinese else 'English'} tracks in {video_file}:")
-            for i, track in enumerate(matched, start=1):
-                print(f"{i}) track_id={track['track_id']}, lang={track['lang']}, title={track['title']}")
-            choice = input("Pick track number (or Enter to skip): ").strip()
-            if choice.isdigit() and 1 <= int(choice) <= len(matched):
-                return matched[int(choice)-1]['track_id']
-            return None
-        else:
-            # no direct matches, prompt for any sub track
-            if sub_tracks:
-                print(f"No direct match found for {'Chinese' if is_chinese else 'English'} in {video_file}.")
-                for i, track in enumerate(sub_tracks, start=1):
-                    print(f"{i}) track_id={track['track_id']}, lang={track['lang']}, title={track['title']}")
+            if len(matched) == 1:
+                return matched[0]['track_id']
+            elif len(matched) > 1:
+                # prompt
+                logger.info(f"Multiple candidate {'Chinese' if is_chinese else 'English'} tracks in {os.path.basename(video_file)}:")
+                for i, track in enumerate(matched, start=1):
+                    logger.info(f"{i}) track_id={track['track_id']}, lang={track['lang']}, title={track['title']}")
                 choice = input("Pick track number (or Enter to skip): ").strip()
-                if choice.isdigit() and 1 <= int(choice) <= len(sub_tracks):
-                    return sub_tracks[int(choice)-1]['track_id']
+                if choice.isdigit() and 1 <= int(choice) <= len(matched):
+                    return matched[int(choice)-1]['track_id']
+                return None
+            else:
+                # no direct matches, prompt for any sub track if there are some
+                if sub_tracks:
+                    logger.info(f"No direct match found for {'Chinese' if is_chinese else 'English'} in {os.path.basename(video_file)}.")
+                    for i, track in enumerate(sub_tracks, start=1):
+                        logger.info(f"{i}) track_id={track['track_id']}, lang={track['lang']}, title={track['title']}")
+                    choice = input("Pick track number (or Enter to skip): ").strip()
+                    if choice.isdigit() and 1 <= int(choice) <= len(sub_tracks):
+                        return sub_tracks[int(choice)-1]['track_id']
+                return None
+        except Exception as e:
+            logger.error(f"Error analyzing MKV tracks: {e}")
             return None
-
     else:
         # Non-MKV => use ffmpeg
-        tracks = list_tracks_ffmpeg(video_file)
-        sub_tracks = [t for t in tracks if t['type'].lower().startswith("sub")]
-        if not sub_tracks:
-            return None
+        try:
+            tracks = list_tracks_ffmpeg(video_file)
+            sub_tracks = [t for t in tracks if t['type'].lower().startswith("sub")]
+            
+            if not sub_tracks:
+                return None
 
-        possible_codes = ["chi","zho","chs","cht","chinese"] if is_chinese else ["eng","english"]
-        matched = []
-        for t in sub_tracks:
-            text = f"{t['lang']} {t['title']}".lower()
-            if any(code in text for code in possible_codes):
-                matched.append(t)
+            possible_codes = ["chi","zho","chs","cht","chinese"] if is_chinese else ["eng","english"]
+            matched = []
+            
+            for t in sub_tracks:
+                text = f"{t['lang']} {t['title']}".lower()
+                if any(code in text for code in possible_codes):
+                    matched.append(t)
 
-        if len(matched) == 1:
-            return matched[0]['track_id']
-        elif len(matched) > 1:
-            print(f"Multiple candidate {'Chinese' if is_chinese else 'English'} tracks in {video_file}:")
-            for i, track in enumerate(matched, start=1):
-                print(f"{i}) track_id={track['track_id']}, lang={track['lang']}")
-            choice = input("Pick track number (or Enter to skip): ").strip()
-            if choice.isdigit() and 1 <= int(choice) <= len(matched):
-                return matched[int(choice)-1]['track_id']
-            return None
-        else:
-            # no direct matches => prompt
-            print(f"No direct match found for {'Chinese' if is_chinese else 'English'} in {video_file}.")
-            for i, track in enumerate(sub_tracks, start=1):
-                print(f"{i}) track_id={track['track_id']}, lang={track['lang']}")
-            choice = input("Pick track number (or Enter to skip): ").strip()
-            if choice.isdigit() and 1 <= int(choice) <= len(sub_tracks):
-                return sub_tracks[int(choice)-1]['track_id']
+            if len(matched) == 1:
+                return matched[0]['track_id']
+            elif len(matched) > 1:
+                logger.info(f"Multiple candidate {'Chinese' if is_chinese else 'English'} tracks in {os.path.basename(video_file)}:")
+                for i, track in enumerate(matched, start=1):
+                    logger.info(f"{i}) track_id={track['track_id']}, lang={track['lang']}")
+                choice = input("Pick track number (or Enter to skip): ").strip()
+                if choice.isdigit() and 1 <= int(choice) <= len(matched):
+                    return matched[int(choice)-1]['track_id']
+                return None
+            else:
+                # no direct matches => prompt if there are any sub tracks
+                if sub_tracks:
+                    logger.info(f"No direct match found for {'Chinese' if is_chinese else 'English'} in {os.path.basename(video_file)}.")
+                    for i, track in enumerate(sub_tracks, start=1):
+                        logger.info(f"{i}) track_id={track['track_id']}, lang={track['lang']}")
+                    choice = input("Pick track number (or Enter to skip): ").strip()
+                    if choice.isdigit() and 1 <= int(choice) <= len(sub_tracks):
+                        return sub_tracks[int(choice)-1]['track_id']
+                return None
+        except Exception as e:
+            logger.error(f"Error analyzing tracks with FFmpeg: {e}")
             return None
 
 def extract_subtitle_track(video_file, track_id, out_path):
@@ -509,9 +610,10 @@ def extract_subtitle_track(video_file, track_id, out_path):
     For others => ffmpeg
     """
     if is_mkv(video_file):
-        extract_subtitle_mkv(video_file, track_id, out_path)
+        result = extract_subtitle_mkv(video_file, track_id, out_path)
+        return out_path if result else None
     else:
-        extract_subtitle_ffmpeg(video_file, track_id, out_path)
+        return extract_subtitle_ffmpeg(video_file, track_id, out_path)
 
 # --------------------------------------------------------------------------
 # Searching for external subtitles
@@ -519,30 +621,77 @@ def extract_subtitle_track(video_file, track_id, out_path):
 
 def find_external_sub(video_path, is_chinese=False):
     """
-    Look for an external .en.srt/.zh.srt or .ass with the same base name, or variants.
+    Look for an external subtitle file with the same base name, or variants.
     If is_chinese=True => checks for .zh.* etc
     If is_chinese=False => checks for .en.* etc
-    Return the first match or None.
     """
-    folder = os.path.dirname(video_path)
-    base, _ = os.path.splitext(video_path)
+    video_dir = os.path.dirname(video_path) or '.'
+    video_name = os.path.basename(video_path)
+    base_name = os.path.splitext(video_name)[0]
+    
+    logger.info(f"Looking for external {'Chinese' if is_chinese else 'English'} subtitle for: {video_name}")
+    
+    # Define patterns to search for
     if is_chinese:
         patterns = [
-            f"{base}.zh.srt", f"{base}.zh.ass",
-            f"{base}.ch.srt", f"{base}.ch.ass",
-            f"{base}.zh-*.*", f"{base}.cn.*", f"{base}.*zh.*"
+            f"{base_name}.zh.*", f"{base_name}.chi.*", f"{base_name}.chs.*", 
+            f"{base_name}.cht.*", f"{base_name}.cn.*", f"{base_name}.*chinese.*",
+            f"{base_name}.*zh.*", f"{base_name}.*chi.*"
         ]
     else:
         patterns = [
-            f"{base}.en.srt", f"{base}.en.ass",
-            f"{base}.eng.srt", f"{base}.eng.ass",
-            f"{base}.*en.*"
+            f"{base_name}.en.*", f"{base_name}.eng.*", f"{base_name}.*english.*",
+            f"{base_name}.*en.*"
         ]
-
-    for pat in patterns:
-        for candidate in glob.glob(pat):
-            if os.path.isfile(candidate):
-                return candidate
+    
+    # Add exact extension patterns
+    if is_chinese:
+        exact_patterns = [f"{base_name}.zh.srt", f"{base_name}.zh.ass", f"{base_name}.chi.srt", f"{base_name}.chi.ass"]
+    else:
+        exact_patterns = [f"{base_name}.en.srt", f"{base_name}.en.ass", f"{base_name}.eng.srt", f"{base_name}.eng.ass"]
+    
+    # Search in the video directory
+    all_files = os.listdir(video_dir)
+    
+    # First check for exact patterns
+    for pattern in exact_patterns:
+        pattern_file = os.path.basename(pattern)
+        if pattern_file in all_files:
+            sub_path = os.path.join(video_dir, pattern_file)
+            logger.info(f"Found exact match: {pattern_file}")
+            return sub_path
+    
+    # If exact patterns not found, try glob patterns
+    for pattern in patterns:
+        full_pattern = os.path.join(video_dir, pattern)
+        matches = glob.glob(full_pattern)
+        if matches:
+            # Sort by path length to get closest name match
+            matches.sort(key=len)
+            logger.info(f"Found pattern match: {os.path.basename(matches[0])}")
+            return matches[0]
+    
+    # Try fallback to same name but .srt or .ass extension
+    sub_extensions = ['.srt', '.ass', '.ssa', '.vtt']
+    for ext in sub_extensions:
+        potential_sub = os.path.join(video_dir, base_name + ext)
+        if os.path.exists(potential_sub):
+            # If we found same-named subtitle, check content for language clues
+            with open(potential_sub, 'rb') as f:
+                try:
+                    sample = f.read(4096).decode('utf-8', errors='replace')
+                    # Extremely basic language detection
+                    has_chinese = any(ord(c) > 0x4E00 and ord(c) < 0x9FFF for c in sample)
+                    if is_chinese and has_chinese:
+                        logger.info(f"Found same-named Chinese subtitle: {base_name}{ext}")
+                        return potential_sub
+                    elif not is_chinese and not has_chinese:
+                        logger.info(f"Found same-named English subtitle: {base_name}{ext}")
+                        return potential_sub
+                except:
+                    pass
+    
+    logger.info(f"No external {'Chinese' if is_chinese else 'English'} subtitle found for {video_name}")
     return None
 
 # --------------------------------------------------------------------------
@@ -555,6 +704,8 @@ def process_one_video(video_path, eng_sub=None, chi_sub=None,
     Merge English/Chinese subs into one track. If eng_sub or chi_sub is None,
     the script attempts to find or extract them from video_path or external files.
     """
+    logger.info(f"Processing video: {os.path.basename(video_path)}")
+    
     # 1. If no ENG sub specified, search external or embedded
     if not eng_sub:
         maybe = find_external_sub(video_path, is_chinese=False)
@@ -566,8 +717,8 @@ def process_one_video(video_path, eng_sub=None, chi_sub=None,
             if track_id:
                 tmp_file = os.path.splitext(os.path.basename(video_path))[0] + f".eng_track_{track_id}.ass"
                 tmp_path = os.path.join(tempfile.gettempdir(), tmp_file)
-                extract_subtitle_track(video_path, track_id, tmp_path)
-                eng_sub = tmp_path
+                extracted = extract_subtitle_track(video_path, track_id, tmp_path)
+                eng_sub = extracted if extracted else None
 
     # 2. If no CHI sub specified, search external or embedded
     if not chi_sub:
@@ -580,17 +731,17 @@ def process_one_video(video_path, eng_sub=None, chi_sub=None,
             if track_id:
                 tmp_file = os.path.splitext(os.path.basename(video_path))[0] + f".chi_track_{track_id}.ass"
                 tmp_path = os.path.join(tempfile.gettempdir(), tmp_file)
-                extract_subtitle_track(video_path, track_id, tmp_path)
-                chi_sub = tmp_path
+                extracted = extract_subtitle_track(video_path, track_id, tmp_path)
+                chi_sub = extracted if extracted else None
 
     # 3. If we still have no ENG or CHI => skip
     if not eng_sub and not chi_sub:
-        print(f"WARNING: No Chinese or English subtitles found for '{video_path}'. Skipping.")
+        logger.warning(f"No Chinese or English subtitles found for '{os.path.basename(video_path)}'. Skipping.")
         return
     elif not eng_sub:
-        print(f"WARNING: No English subtitles found for '{video_path}'. Will only use Chinese.")
+        logger.warning(f"No English subtitles found for '{os.path.basename(video_path)}'. Will only use Chinese.")
     elif not chi_sub:
-        print(f"WARNING: No Chinese subtitles found for '{video_path}'. Will only use English.")
+        logger.warning(f"No Chinese subtitles found for '{os.path.basename(video_path)}'. Will only use English.")
 
     # 4. Parse what we have
     eng_events, eng_styles, script_info_eng = [], [], []
@@ -599,26 +750,30 @@ def process_one_video(video_path, eng_sub=None, chi_sub=None,
     def is_srt(path):
         return path.lower().endswith(".srt")
     def is_ass(path):
-        return path.lower().endswith(".ass")
+        return path.lower().endswith(".ass") or path.lower().endswith(".ssa")
 
     if eng_sub and os.path.isfile(eng_sub):
+        logger.info(f"Parsing English subtitle: {os.path.basename(eng_sub)}")
         if is_srt(eng_sub):
             eng_events = parse_srt(eng_sub)
         elif is_ass(eng_sub):
             eev, esty, sinfo = parse_ass(eng_sub)
             eng_events, eng_styles, script_info_eng = eev, esty, sinfo
+        logger.info(f"Found {len(eng_events)} English subtitle events")
 
     if chi_sub and os.path.isfile(chi_sub):
+        logger.info(f"Parsing Chinese subtitle: {os.path.basename(chi_sub)}")
         if is_srt(chi_sub):
             chi_events = parse_srt(chi_sub)
         elif is_ass(chi_sub):
             cev, csty, sinfo = parse_ass(chi_sub)
             chi_events, chi_styles, script_info_chi = cev, csty, sinfo
+        logger.info(f"Found {len(chi_events)} Chinese subtitle events")
 
     # 5. Warn if forced track detected
     forced = detect_forced_track(chi_events, eng_events)
     if forced:
-        print(f"Warning: The {forced} track is significantly shorter. Possibly forced or partial subs.")
+        logger.warning(f"Warning: The {forced} track is significantly shorter. Possibly forced or partial subs.")
 
     # 6. Determine output name if not provided
     if not out_file:
@@ -643,7 +798,7 @@ def process_one_video(video_path, eng_sub=None, chi_sub=None,
                 end_str   = f"{end_h:02d}:{end_m:02d}:{end_s:02d},{end_ms:03d}"
                 text_block = ev['text']
                 f.write(f"{i}\n{start_str} --> {end_str}\n{text_block}\n\n")
-        print(f"Created bilingual SRT: {out_file}")
+        logger.info(f"Created bilingual SRT: {out_file}")
     else:
         merged_ass = merge_events_ass(chi_events, eng_events,
                                       chi_styles, eng_styles,
@@ -651,7 +806,7 @@ def process_one_video(video_path, eng_sub=None, chi_sub=None,
         with open(out_file, "w", encoding="utf-8") as f:
             f.write(codecs.BOM_UTF8.decode('utf-8'))
             f.write(merged_ass)
-        print(f"Created bilingual ASS: {out_file}")
+        logger.info(f"Created bilingual ASS: {out_file}")
 
 # --------------------------------------------------------------------------
 # Main CLI
@@ -660,7 +815,7 @@ def process_one_video(video_path, eng_sub=None, chi_sub=None,
 def main():
     parser = argparse.ArgumentParser(
         description="Merge English & Chinese subtitles into a single track. "
-                    "Supports MKV via mkvextract and MP4/etc via ffmpeg for embedded tracks."
+                    "Supports MKV via mkvextract and MP4/AVI/etc via ffmpeg for embedded tracks."
     )
     parser.add_argument("-e","--english", help="Path to external English subtitle (.srt/.ass)")
     parser.add_argument("-c","--chinese", help="Path to external Chinese subtitle (.srt/.ass)")
@@ -670,7 +825,12 @@ def main():
     parser.add_argument("-v","--video",   help="Video file to search for embedded subs or match external subs.")
     parser.add_argument("--bulk", action="store_true",
                         help="Process all media files in the given folder (or current dir) in bulk.")
+    parser.add_argument("--debug", action="store_true",
+                        help="Enable debug logging")
     args = parser.parse_args()
+
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
 
     out_format = args.format
 
@@ -678,42 +838,50 @@ def main():
     if args.bulk:
         path = args.video or "."
         if os.path.isdir(path):
-            # Find .mkv, .mp4, etc.
-            # We'll just search for common containers
-            exts = ["*.mkv","*.mp4","*.m4v","*.mov","*.avi","*.flv","*.ts"]
+            # Find video files
+            exts = ["*.mkv","*.mp4","*.m4v","*.mov","*.avi","*.flv","*.ts", "*.webm"]
             files = []
-            for x in exts:
-                files.extend(glob.glob(os.path.join(path, x)))
+            for ext in exts:
+                files.extend(glob.glob(os.path.join(path, ext)))
         elif os.path.isfile(path):
             files = [path]
         else:
-            files = []
+            logger.error(f"Path not found: {path}")
+            sys.exit(1)
 
         if not files:
-            print("No media files found for bulk operation.")
+            logger.warning("No media files found for bulk operation.")
             sys.exit(0)
 
         for media_file in sorted(files):
             print(f"\n=== Processing: {media_file} ===")
-            process_one_video(media_file,
-                              eng_sub=args.english,
-                              chi_sub=args.chinese,
-                              out_format=out_format,
-                              out_file=args.output)
+            try:
+                process_one_video(media_file,
+                                  eng_sub=args.english,
+                                  chi_sub=args.chinese,
+                                  out_format=out_format,
+                                  out_file=args.output)
+            except Exception as e:
+                logger.error(f"Error processing '{media_file}': {e}")
+                continue
         return
 
     # Non-bulk mode
     if args.video:
         # Merge with possible embedded detection
-        process_one_video(args.video,
-                          eng_sub=args.english,
-                          chi_sub=args.chinese,
-                          out_format=out_format,
-                          out_file=args.output)
+        try:
+            process_one_video(args.video,
+                              eng_sub=args.english,
+                              chi_sub=args.chinese,
+                              out_format=out_format,
+                              out_file=args.output)
+        except Exception as e:
+            logger.error(f"Error processing '{args.video}': {e}")
+            sys.exit(1)
     else:
         # If only external subs given
         if not args.english or not args.chinese:
-            print("ERROR: Provide both --english and --chinese, or use --video, or use --bulk.")
+            logger.error("ERROR: Provide both --english and --chinese, or use --video, or use --bulk.")
             sys.exit(1)
 
         # Merge external files directly
@@ -724,63 +892,79 @@ def main():
         def is_srt(file):
             return file.lower().endswith(".srt")
         def is_ass(file):
-            return file.lower().endswith(".ass")
+            return file.lower().endswith(".ass") or file.lower().endswith(".ssa")
 
         eng_events = chi_events = []
         eng_styles = chi_styles = []
         script_info_eng = script_info_chi = []
 
-        if is_srt(eng_file):
-            eng_events = parse_srt(eng_file)
-        elif is_ass(eng_file):
-            eev, esty, sinfo = parse_ass(eng_file)
-            eng_events, eng_styles, script_info_eng = eev, esty, sinfo
-        else:
-            print(f"Unsupported English subtitle format: {eng_file}")
-            sys.exit(1)
+        try:
+            if is_srt(eng_file):
+                eng_events = parse_srt(eng_file)
+            elif is_ass(eng_file):
+                eev, esty, sinfo = parse_ass(eng_file)
+                eng_events, eng_styles, script_info_eng = eev, esty, sinfo
+            else:
+                logger.error(f"Unsupported English subtitle format: {eng_file}")
+                sys.exit(1)
 
-        if is_srt(chi_file):
-            chi_events = parse_srt(chi_file)
-        elif is_ass(chi_file):
-            cev, csty, sinfo = parse_ass(chi_file)
-            chi_events, chi_styles, script_info_chi = cev, csty, sinfo
-        else:
-            print(f"Unsupported Chinese subtitle format: {chi_file}")
+            if is_srt(chi_file):
+                chi_events = parse_srt(chi_file)
+            elif is_ass(chi_file):
+                cev, csty, sinfo = parse_ass(chi_file)
+                chi_events, chi_styles, script_info_chi = cev, csty, sinfo
+            else:
+                logger.error(f"Unsupported Chinese subtitle format: {chi_file}")
+                sys.exit(1)
+        except Exception as e:
+            logger.error(f"Error parsing subtitle files: {e}")
             sys.exit(1)
 
         forced = detect_forced_track(chi_events, eng_events)
         if forced:
-            print(f"Warning: {forced} track is shorter. Possibly forced or partial.")
+            logger.warning(f"Warning: {forced} track is shorter. Possibly forced or partial.")
 
         out_file = args.output
         if not out_file:
             out_file = f"merged.{out_format}"
-        if out_format == "srt":
-            merged = merge_events_srt(chi_events, eng_events)
-            with open(out_file, "w", encoding="utf-8") as f:
-                f.write(codecs.BOM_UTF8.decode('utf-8'))
-                for i, ev in enumerate(merged, start=1):
-                    start_h = int(ev['start'] // 3600)
-                    start_m = int((ev['start'] % 3600) // 60)
-                    start_s = int(ev['start'] % 60)
-                    start_ms = int((ev['start'] * 1000) % 1000)
-                    end_h = int(ev['end'] // 3600)
-                    end_m = int((ev['end'] % 3600) // 60)
-                    end_s = int(ev['end'] % 60)
-                    end_ms = int((ev['end'] * 1000) % 1000)
-                    start_str = f"{start_h:02d}:{start_m:02d}:{start_s:02d},{start_ms:03d}"
-                    end_str   = f"{end_h:02d}:{end_m:02d}:{end_s:02d},{end_ms:03d}"
-                    text_block = ev['text']
-                    f.write(f"{i}\n{start_str} --> {end_str}\n{text_block}\n\n")
-            print(f"Created merged SRT: {out_file}")
-        else:
-            merged_ass = merge_events_ass(chi_events, eng_events,
-                                          chi_styles, eng_styles,
-                                          script_info_chi, script_info_eng)
-            with open(out_file, "w", encoding="utf-8") as f:
-                f.write(codecs.BOM_UTF8.decode('utf-8'))
-                f.write(merged_ass)
-            print(f"Created merged ASS: {out_file}")
+            
+        try:
+            if out_format == "srt":
+                merged = merge_events_srt(chi_events, eng_events)
+                with open(out_file, "w", encoding="utf-8") as f:
+                    f.write(codecs.BOM_UTF8.decode('utf-8'))
+                    for i, ev in enumerate(merged, start=1):
+                        start_h = int(ev['start'] // 3600)
+                        start_m = int((ev['start'] % 3600) // 60)
+                        start_s = int(ev['start'] % 60)
+                        start_ms = int((ev['start'] * 1000) % 1000)
+                        end_h = int(ev['end'] // 3600)
+                        end_m = int((ev['end'] % 3600) // 60)
+                        end_s = int(ev['end'] % 60)
+                        end_ms = int((ev['end'] * 1000) % 1000)
+                        start_str = f"{start_h:02d}:{start_m:02d}:{start_s:02d},{start_ms:03d}"
+                        end_str   = f"{end_h:02d}:{end_m:02d}:{end_s:02d},{end_ms:03d}"
+                        text_block = ev['text']
+                        f.write(f"{i}\n{start_str} --> {end_str}\n{text_block}\n\n")
+                logger.info(f"Created merged SRT: {out_file}")
+            else:
+                merged_ass = merge_events_ass(chi_events, eng_events,
+                                            chi_styles, eng_styles,
+                                            script_info_chi, script_info_eng)
+                with open(out_file, "w", encoding="utf-8") as f:
+                    f.write(codecs.BOM_UTF8.decode('utf-8'))
+                    f.write(merged_ass)
+                logger.info(f"Created merged ASS: {out_file}")
+        except Exception as e:
+            logger.error(f"Error creating output file: {e}")
+            sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("\nOperation cancelled by user")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        sys.exit(1)
