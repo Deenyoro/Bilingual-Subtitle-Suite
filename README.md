@@ -6,6 +6,15 @@ This Python script merges **Chinese** and **English** subtitles into a single sy
 2. **Automatically extract** embedded subtitle tracks from videos (in `.mkv`, `.mp4`, `.m4v`, `.avi`, etc.) using **FFmpeg**.
 3. **Combine** the two languages (Chinese on top, English on bottom in ASS mode, or merged lines in SRT mode) into one **bilingual subtitle**.
 
+## Screenshots
+
+Below are example images demonstrating the output of the script:
+
+| Image                                             | Description                                       |
+|---------------------------------------------------|---------------------------------------------------|
+| ![Official Combined Subtitles](houseofficial.jpg) | *houseofficial.jpg* shows an example of official combined subtitles. |
+| ![Script Output](fma03script.png)                 | *fma03script.png* is produced by the script.      |
+
 ---
 
 ## Table of Contents
