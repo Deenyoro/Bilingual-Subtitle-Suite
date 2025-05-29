@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Enhanced Bilingual Subtitle Merger
+Chinese Bilingual Subtitle Merger
 ==================================
 
 A comprehensive tool for merging Chinese and English subtitles into a single bilingual track.
@@ -15,9 +15,6 @@ Key Features:
 - Forced subtitle detection
 - Multiple output format options
 
-Author: Enhanced version based on original script
-License: MIT
-Version: 2.0.0
 """
 
 import argparse
