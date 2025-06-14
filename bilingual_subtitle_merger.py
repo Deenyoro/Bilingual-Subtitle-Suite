@@ -272,16 +272,17 @@ def clean_subtitle_text(text: str, remove_formatting: bool = False) -> str:
 def run_command(cmd: List[str], capture_output: bool = True, timeout: int = 30) -> subprocess.CompletedProcess:
     """
     Run a command with proper error handling and timeout.
-    
+
     Args:
         cmd: Command and arguments as list
         capture_output: Whether to capture stdout/stderr
         timeout: Command timeout in seconds
-        
+
     Returns:
         CompletedProcess instance
     """
     try:
+        logger.debug(f"Running command: {' '.join(cmd)}")
         if capture_output:
             result = subprocess.run(
                 cmd,
@@ -294,18 +295,24 @@ def run_command(cmd: List[str], capture_output: bool = True, timeout: int = 30) 
             )
         else:
             result = subprocess.run(cmd, timeout=timeout)
+
+        if result.returncode != 0:
+            logger.debug(f"Command failed with return code {result.returncode}")
+            if hasattr(result, 'stderr') and result.stderr:
+                logger.debug(f"Command stderr: {result.stderr[:500]}...")  # Limit stderr output
+
         return result
     except subprocess.TimeoutExpired:
-        logger.error(f"Command timed out after {timeout}s: {' '.join(cmd)}")
+        logger.error(f"Command timed out after {timeout}s: {' '.join(cmd[:3])}...")  # Show only first 3 args
         # Create a dummy result
         class TimeoutResult:
             def __init__(self):
                 self.returncode = -1
                 self.stdout = ""
-                self.stderr = "Command execution timed out"
+                self.stderr = f"Command execution timed out after {timeout} seconds"
         return TimeoutResult()
     except Exception as e:
-        logger.error(f"Command failed: {' '.join(cmd)}")
+        logger.error(f"Command failed: {' '.join(cmd[:3])}...")  # Show only first 3 args
         logger.debug(f"Error: {e}")
         # Create a dummy result
         class ErrorResult:
@@ -995,81 +1002,63 @@ def list_subtitle_tracks(video_path: str) -> List[SubtitleTrack]:
 def extract_subtitle_track(video_path: str, track: SubtitleTrack, output_path: str) -> Optional[str]:
     """
     Extract a subtitle track from a video file.
-    
+
     Args:
         video_path: Path to the video file
         track: SubtitleTrack object to extract
         output_path: Desired output path
-        
+
     Returns:
         Path to extracted subtitle file or None if extraction failed
     """
     logger.info(f"Extracting subtitle track {track.track_id} ({track.language}) to {os.path.basename(output_path)}")
-    
+    logger.info(f"This may take several minutes for large video files. Please be patient...")
+
     # Ensure output directory exists
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    
+
     # Determine output format from extension
     _, ext = os.path.splitext(output_path)
     ext = ext.lower()
-    
-    # Map extensions to ffmpeg codec names
-    format_map = {
-        '.srt': 'srt',
-        '.ass': 'ass',
-        '.ssa': 'ssa',
-        '.vtt': 'webvtt'
-    }
-    
-    # Try extraction with specified format
-    output_format = format_map.get(ext, 'srt')
-    
+
     with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = os.path.join(tmp_dir, f"subtitle{ext if ext else '.srt'}")
-        
+        # First, try direct stream copy (fastest and most reliable)
+        logger.debug(f"Attempting direct stream copy for track {track.track_id}")
+
+        # Determine appropriate extension based on codec
+        if track.codec.lower() in ['subrip', 'srt']:
+            copy_ext = '.srt'
+        elif track.codec.lower() in ['ass', 'ssa']:
+            copy_ext = '.ass'
+        elif track.codec.lower() in ['webvtt', 'vtt']:
+            copy_ext = '.vtt'
+        else:
+            copy_ext = '.srt'  # Default fallback
+
+        tmp_path = os.path.join(tmp_dir, f"subtitle{copy_ext}")
+
         cmd = [
-            "ffmpeg", "-y", "-hide_banner",
-            "-i", video_path,
-            "-map", track.ffmpeg_index,
-            "-c:s", output_format,
-            tmp_path
-        ]
-        
-        result = run_command(cmd, timeout=120)
-        
-        if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
-            # Copy to final destination
-            try:
-                shutil.copy2(tmp_path, output_path)
-                logger.info(f"Successfully extracted subtitle to {os.path.basename(output_path)}")
-                return output_path
-            except Exception as e:
-                logger.error(f"Failed to copy extracted subtitle: {e}")
-                return None
-        
-        # If format conversion failed, try direct copy
-        logger.debug(f"Format conversion failed, trying direct stream copy")
-        
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner",
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
+            "-fflags", "+genpts",
             "-i", video_path,
             "-map", track.ffmpeg_index,
             "-c:s", "copy",
+            "-avoid_negative_ts", "make_zero",
             tmp_path
         ]
-        
-        result = run_command(cmd, timeout=120)
-        
+
+        result = run_command(cmd, timeout=900)  # Increased timeout to 15 minutes for large files
+
         if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
-            # Change extension if needed
+            # Determine final output path
             final_output = output_path
-            if not output_path.lower().endswith(('.srt', '.ass', '.ssa', '.vtt')):
-                # Try to detect format from codec
-                if 'ass' in track.codec.lower() or 'ssa' in track.codec.lower():
-                    final_output = os.path.splitext(output_path)[0] + '.ass'
-                else:
-                    final_output = os.path.splitext(output_path)[0] + '.srt'
-            
+            if ext and ext != copy_ext:
+                # If user requested specific format, keep it
+                final_output = output_path
+            else:
+                # Use the format that worked
+                final_output = os.path.splitext(output_path)[0] + copy_ext
+
             try:
                 shutil.copy2(tmp_path, final_output)
                 logger.info(f"Successfully extracted subtitle to {os.path.basename(final_output)}")
@@ -1077,7 +1066,41 @@ def extract_subtitle_track(video_path: str, track: SubtitleTrack, output_path: s
             except Exception as e:
                 logger.error(f"Failed to copy extracted subtitle: {e}")
                 return None
-    
+
+        # If direct copy failed, try format conversion only if necessary
+        if ext and ext != copy_ext:
+            logger.debug(f"Direct copy failed, trying format conversion to {ext}")
+
+            # Map extensions to ffmpeg codec names
+            format_map = {
+                '.srt': 'srt',
+                '.ass': 'ass',
+                '.ssa': 'ssa',
+                '.vtt': 'webvtt'
+            }
+
+            output_format = format_map.get(ext, 'srt')
+            tmp_path_converted = os.path.join(tmp_dir, f"subtitle_converted{ext}")
+
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", video_path,
+                "-map", track.ffmpeg_index,
+                "-c:s", output_format,
+                tmp_path_converted
+            ]
+
+            result = run_command(cmd, timeout=900)  # Increased timeout to 15 minutes
+
+            if result.returncode == 0 and os.path.exists(tmp_path_converted) and os.path.getsize(tmp_path_converted) > 0:
+                try:
+                    shutil.copy2(tmp_path_converted, output_path)
+                    logger.info(f"Successfully extracted and converted subtitle to {os.path.basename(output_path)}")
+                    return output_path
+                except Exception as e:
+                    logger.error(f"Failed to copy converted subtitle: {e}")
+                    return None
+
     logger.error(f"Failed to extract subtitle track {track.track_id}")
     return None
 
@@ -1324,10 +1347,17 @@ def process_video(video_path: str,
                 track = find_subtitle_track(tracks, lang_codes, chinese_track, remap_chinese)
                 
                 if track:
-                    # Extract to temporary file
+                    # Extract to temporary file - use appropriate extension based on codec
+                    if track.codec.lower() in ['subrip', 'srt']:
+                        temp_ext = '.srt'
+                    elif track.codec.lower() in ['ass', 'ssa']:
+                        temp_ext = '.ass'
+                    else:
+                        temp_ext = '.srt'  # Default
+
                     temp_file = os.path.join(
                         os.path.dirname(video_path),
-                        f".{os.path.basename(video_path)}.chi_track_{track.track_id}.ass"
+                        f".{os.path.basename(video_path)}.chi_track_{track.track_id}{temp_ext}"
                     )
                     extracted = extract_subtitle_track(video_path, track, temp_file)
                     if extracted:
@@ -1354,10 +1384,17 @@ def process_video(video_path: str,
                 track = find_subtitle_track(tracks, lang_codes, english_track, remap_english)
                 
                 if track:
-                    # Extract to temporary file
+                    # Extract to temporary file - use appropriate extension based on codec
+                    if track.codec.lower() in ['subrip', 'srt']:
+                        temp_ext = '.srt'
+                    elif track.codec.lower() in ['ass', 'ssa']:
+                        temp_ext = '.ass'
+                    else:
+                        temp_ext = '.srt'  # Default
+
                     temp_file = os.path.join(
                         os.path.dirname(video_path),
-                        f".{os.path.basename(video_path)}.eng_track_{track.track_id}.ass"
+                        f".{os.path.basename(video_path)}.eng_track_{track.track_id}{temp_ext}"
                     )
                     extracted = extract_subtitle_track(video_path, track, temp_file)
                     if extracted:
