@@ -547,6 +547,18 @@ class BilingualMerger:
 
         logger.info(f"Merging {len(events1)} and {len(events2)} subtitle events")
 
+        # Check if both tracks are embedded (already synchronized)
+        track1_info = getattr(self, '_track1_info', {})
+        track2_info = getattr(self, '_track2_info', {})
+
+        both_embedded = (track1_info.get('source_type') == 'embedded' and
+                        track2_info.get('source_type') == 'embedded')
+
+        # If both tracks are embedded and no explicit alignment requested, use simple merge
+        if both_embedded and not (self.auto_align or self.use_translation or self.manual_align):
+            logger.info("Both tracks are embedded - using simple merge without timing modifications")
+            return self._merge_with_simple_overlap_no_timing_changes(events1, events2)
+
         # Use enhanced alignment if enabled
         if self.auto_align:
             return self._merge_with_enhanced_alignment(events1, events2)
@@ -1678,6 +1690,72 @@ class BilingualMerger:
                 text=combined_text
             ))
 
+        return segments
+
+    def _merge_with_simple_overlap_no_timing_changes(self, events1: List[SubtitleEvent],
+                                                   events2: List[SubtitleEvent]) -> List[SubtitleEvent]:
+        """
+        Merge events using simple overlap-based method WITHOUT any timing modifications.
+        This preserves the original timing from embedded subtitles that are already synchronized.
+
+        Args:
+            events1: First list of events
+            events2: Second list of events
+
+        Returns:
+            Merged list of events with original timing preserved
+        """
+        logger.info("Using simple overlap-based merging with preserved timing")
+
+        # Create timeline segments using original timing
+        all_times = set()
+        for event in events1 + events2:
+            all_times.add(event.start)
+            all_times.add(event.end)
+
+        timeline = sorted(all_times)
+        segments = []
+
+        # Create segments for each time interval
+        for i in range(len(timeline) - 1):
+            seg_start = timeline[i]
+            seg_end = timeline[i + 1]
+
+            if seg_end <= seg_start:
+                continue
+
+            # Find events that overlap this segment
+            text1 = None
+            text2 = None
+
+            for event in events1:
+                if event.start <= seg_start < event.end:
+                    text1 = event.text
+                    break
+
+            for event in events2:
+                if event.start <= seg_start < event.end:
+                    text2 = event.text
+                    break
+
+            # Skip empty segments
+            if not text1 and not text2:
+                continue
+
+            # Combine texts
+            if text1 and text2:
+                combined_text = f"{text1}\n{text2}"
+            else:
+                combined_text = text1 if text1 else text2
+
+            segments.append(SubtitleEvent(
+                start=seg_start,
+                end=seg_end,
+                text=combined_text
+            ))
+
+        # Return segments WITHOUT any timing optimization
+        logger.info(f"Simple merge completed: {len(segments)} merged events created (timing preserved)")
         return segments
 
     def _optimize_subtitle_timing(self, events: List[SubtitleEvent]) -> List[SubtitleEvent]:

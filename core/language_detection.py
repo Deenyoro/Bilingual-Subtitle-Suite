@@ -355,7 +355,11 @@ class LanguageDetector:
         Returns:
             Generated filename with language codes
         """
-        base = base_path.with_suffix('')
+        # Get the complete base filename without extension
+        # For complex filenames like "Movie.2019.1080p.x264-NTG.mkv"
+        # we want to preserve "Movie.2019.1080p.x264-NTG" completely
+        base_name = base_path.stem  # This gets filename without the last extension
+        base_dir = base_path.parent
 
         # Check if both languages were detected
         if lang1 != 'unknown' and lang2 != 'unknown':
@@ -369,11 +373,11 @@ class LanguageDetector:
                 languages = sorted([lang1, lang2])
 
             lang_suffix = '-'.join(languages)
-            return base.with_suffix(f'.{lang_suffix}.{format_ext}')
+            return base_dir / f"{base_name}.{lang_suffix}.{format_ext}"
         else:
             # Fallback to generic bilingual naming
             logger.info(f"Could not detect both languages (detected: {lang1}, {lang2}), using fallback naming")
-            return base.with_suffix(f'.bilingual.{format_ext}')
+            return base_dir / f"{base_name}.bilingual.{format_ext}"
 
     @staticmethod
     def detect_language_from_filename(filename: str) -> str:
@@ -465,36 +469,4 @@ class LanguageDetector:
         # Return first 2-3 characters as fallback
         return lang[:2] if len(lang) >= 2 else lang
 
-    @staticmethod
-    def generate_bilingual_filename(base_path: Path, lang1: str, lang2: str, format_ext: str) -> Path:
-        """
-        Generate bilingual filename based on detected languages.
 
-        Args:
-            base_path: Base file path
-            lang1: First language code
-            lang2: Second language code
-            format_ext: File format extension
-
-        Returns:
-            Generated filename with language codes
-        """
-        base = base_path.with_suffix('')
-
-        # Check if both languages were detected
-        if lang1 != 'unknown' and lang2 != 'unknown':
-            # Order languages with foreign language first, then English
-            if lang1 == 'en' and lang2 != 'en':
-                languages = [lang2, lang1]  # Foreign first, then English
-            elif lang2 == 'en' and lang1 != 'en':
-                languages = [lang1, lang2]  # Foreign first, then English
-            else:
-                # If neither is English or both are non-English, sort alphabetically
-                languages = sorted([lang1, lang2])
-
-            lang_suffix = '-'.join(languages)
-            return base.with_suffix(f'.{lang_suffix}.{format_ext}')
-        else:
-            # Fallback to generic bilingual naming
-            logger.info(f"Could not detect both languages (detected: {lang1}, {lang2}), using fallback naming")
-            return base.with_suffix(f'.bilingual.{format_ext}')
