@@ -226,3 +226,6 @@ third_party/tesseract_install/
 # Translation cache
 translation_cache/
 *.cache
+
+# Development and Reference Files
+originalscript.py

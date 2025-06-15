@@ -210,6 +210,91 @@ class InteractiveInterface:
             options['no_pgs'] = False
 
         return options
+
+    def _get_enhanced_alignment_options_with_mixed_detection(self, video_path=None, chinese_sub=None, english_sub=None):
+        """
+        Get enhanced alignment options with automatic mixed track realignment detection.
+
+        This method automatically enables enhanced realignment when mixed track scenarios
+        with major timing misalignment are detected, providing feature parity with CLI mode.
+
+        Args:
+            video_path: Path to video file (for embedded track detection)
+            chinese_sub: Path to Chinese subtitle file (external)
+            english_sub: Path to English subtitle file (external)
+
+        Returns:
+            Dictionary of alignment options with automatic mixed realignment enabled if needed
+        """
+        # Start with standard enhanced alignment options
+        options = self._get_enhanced_alignment_options()
+
+        # Detect mixed track scenario
+        mixed_scenario_detected = False
+        embedded_track_info = None
+        external_track_info = None
+
+        if video_path:
+            # Check for embedded tracks
+            from core.video_containers import VideoContainerHandler
+            video_handler = VideoContainerHandler()
+
+            try:
+                tracks = video_handler.list_subtitle_tracks(video_path)
+                has_embedded_chinese = any(track for track in tracks if 'chi' in track.language.lower() or 'zh' in track.language.lower())
+                has_embedded_english = any(track for track in tracks if 'eng' in track.language.lower() or 'en' in track.language.lower())
+
+                # Determine mixed scenario
+                if has_embedded_english and chinese_sub:
+                    mixed_scenario_detected = True
+                    embedded_track_info = "English (embedded)"
+                    external_track_info = f"Chinese (external: {chinese_sub.name})"
+                elif has_embedded_chinese and english_sub:
+                    mixed_scenario_detected = True
+                    embedded_track_info = "Chinese (embedded)"
+                    external_track_info = f"English (external: {english_sub.name})"
+
+            except Exception as e:
+                self.logger.debug(f"Failed to analyze video tracks: {e}")
+
+        # If mixed scenario detected, explain and auto-enable enhanced realignment
+        if mixed_scenario_detected:
+            print("\n" + "🔍 MIXED TRACK SCENARIO DETECTED" + "=" * 30)
+            print("🔍 MIXED TRACK SCENARIO DETECTED")
+            print("=" * 60)
+            print(f"📺 Embedded track: {embedded_track_info}")
+            print(f"📄 External track: {external_track_info}")
+            print()
+            print("This scenario may require enhanced realignment if the external")
+            print("subtitle file has different timing compared to the embedded track.")
+            print()
+            print("Enhanced realignment will:")
+            print("✅ Preserve embedded track timing (video-synchronized)")
+            print("🔄 Shift external track timing to match embedded track")
+            print("🗑️  Remove mistimed content before alignment point")
+            print("🎯 Use semantic matching to find alignment anchor")
+            print()
+
+            # Ask user if they want to enable enhanced realignment
+            enable_mixed = self._get_yes_no(
+                "Enable enhanced realignment for mixed tracks?",
+                default=True
+            )
+
+            if enable_mixed:
+                options['enable_mixed_realignment'] = True
+                print("✅ Enhanced mixed track realignment ENABLED")
+                print("   The system will automatically detect major timing misalignment")
+                print("   and apply intelligent realignment when needed.")
+            else:
+                options['enable_mixed_realignment'] = False
+                print("⚠️  Enhanced mixed track realignment DISABLED")
+                print("   Timing preservation will be used (may result in poor alignment)")
+        else:
+            # No mixed scenario detected, use standard behavior
+            options['enable_mixed_realignment'] = False
+
+        return options
     
     def _handle_merge_subtitles(self):
         """Handle bilingual subtitle merging."""
@@ -267,7 +352,7 @@ class InteractiveInterface:
             print("✗ Failed to merge subtitles")
     
     def _merge_from_video(self):
-        """Extract and merge subtitles from video file with enhanced alignment."""
+        """Extract and merge subtitles from video file with enhanced alignment and automatic mixed track detection."""
         print("\nExtracting and merging from video...")
 
         video_path = self._get_file_path("Video file")
@@ -285,8 +370,12 @@ class InteractiveInterface:
         print("\nProcessing options:")
         prefer_external = self._get_yes_no("Prefer external subtitles over embedded?")
 
-        # Enhanced alignment options
-        alignment_options = self._get_enhanced_alignment_options()
+        # Enhanced alignment options with automatic mixed track detection
+        alignment_options = self._get_enhanced_alignment_options_with_mixed_detection(
+            video_path=video_path,
+            chinese_sub=chinese_sub,
+            english_sub=english_sub
+        )
 
         # Create merger with enhanced options
         merger = BilingualMerger(**alignment_options)
@@ -656,7 +745,7 @@ class InteractiveInterface:
             print("Invalid choice.")
 
     def _batch_merge_videos(self):
-        """Batch merge subtitles from multiple videos."""
+        """Batch merge subtitles from multiple videos with enhanced mixed track detection."""
         print("\nBatch merging from videos...")
 
         directory = self._get_directory_path("Directory containing video files")
@@ -666,6 +755,30 @@ class InteractiveInterface:
         recursive = self._get_yes_no("Process subdirectories recursively?")
         output_format = self._get_output_format()
         prefer_external = self._get_yes_no("Prefer external subtitles over embedded?")
+
+        # Enhanced alignment options for batch processing
+        print("\nEnhanced alignment options for batch processing:")
+        print("These options will apply to all videos in the batch.")
+
+        # Get enhanced alignment options (without video-specific detection for batch)
+        alignment_options = self._get_enhanced_alignment_options()
+
+        # Ask about mixed track realignment for batch processing
+        print("\nMixed Track Realignment for Batch Processing:")
+        print("This feature automatically handles videos with embedded subtitles")
+        print("and external subtitle files that have major timing misalignment.")
+        print()
+        enable_mixed_batch = self._get_yes_no(
+            "Enable enhanced mixed track realignment for batch processing?",
+            default=True
+        )
+        alignment_options['enable_mixed_realignment'] = enable_mixed_batch
+
+        if enable_mixed_batch:
+            print("✅ Enhanced mixed track realignment ENABLED for batch")
+            print("   Will automatically detect and fix timing misalignment in mixed scenarios")
+        else:
+            print("⚠️  Enhanced mixed track realignment DISABLED for batch")
 
         print(f"\nProcessing directory: {directory}")
 
@@ -678,14 +791,34 @@ class InteractiveInterface:
 
         print(f"Found {len(video_files)} video files")
 
-        results = self.batch_processor.process_videos_batch(
-            video_paths=video_files,
-            operation="merge",
-            output_format=output_format,
-            prefer_external=prefer_external
+        # Use enhanced batch processor with alignment options
+        from processors.batch_processor import BatchProcessor
+        enhanced_batch_processor = BatchProcessor()
+
+        results = enhanced_batch_processor.process_directory_interactive(
+            directory=directory,
+            pattern="*.mkv",  # Focus on video files
+            merger_options=alignment_options
         )
 
-        print("\n" + self.batch_processor.get_processing_summary(results))
+        # Print enhanced summary
+        print(f"\n{'='*60}")
+        print("BATCH PROCESSING SUMMARY")
+        print(f"{'='*60}")
+        print(f"Total files: {results['total']}")
+        print(f"Successfully processed: {results['successful']}")
+        print(f"Failed: {results['failed']}")
+        print(f"Skipped: {results['skipped']}")
+
+        if results['errors']:
+            print(f"\nErrors:")
+            for error in results['errors']:
+                print(f"  - {error}")
+
+        if results['processed_files']:
+            print(f"\nProcessed files:")
+            for file_path in results['processed_files']:
+                print(f"  ✅ {file_path}")
 
     def _bulk_subtitle_alignment(self):
         """Bulk alignment of subtitle files without combining them."""

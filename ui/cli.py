@@ -165,6 +165,8 @@ Examples:
                                 help='Force PGS subtitle conversion even when other subtitles exist')
         merge_parser.add_argument('--no-pgs', action='store_true',
                                 help='Disable PGS auto-activation (skip PGS conversion)')
+        merge_parser.add_argument('--enable-mixed-realignment', action='store_true',
+                                help='Enable enhanced realignment for mixed embedded+external tracks with major timing misalignment')
     
     def _add_convert_parser(self, subparsers):
         """Add convert command parser."""
@@ -473,7 +475,8 @@ Examples:
                 sync_strategy=args.sync_strategy,
                 reference_language_preference=args.reference_language,
                 force_pgs=getattr(args, 'force_pgs', False),
-                no_pgs=getattr(args, 'no_pgs', False)
+                no_pgs=getattr(args, 'no_pgs', False),
+                enable_mixed_realignment=getattr(args, 'enable_mixed_realignment', False)
             )
             logger.info(f"Using enhanced alignment: auto_align={args.auto_align}, "
                        f"use_translation={args.use_translation}, manual_align={args.manual_align}, "
