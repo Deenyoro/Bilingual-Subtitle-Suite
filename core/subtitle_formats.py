@@ -222,7 +222,7 @@ class SRTParser(SubtitleParser):
             IOError: If file cannot be written
         """
         try:
-            with open(output_path, 'w', encoding='utf-8-sig', newline='\n') as f:
+            with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
                 for i, event in enumerate(subtitle_file.events, start=1):
                     # Write index
                     f.write(f"{i}\n")

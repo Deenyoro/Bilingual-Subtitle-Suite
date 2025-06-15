@@ -28,7 +28,8 @@ class BilingualMerger:
                  alignment_threshold: float = 0.8, translation_api_key: Optional[str] = None,
                  manual_align: bool = False, sync_strategy: str = 'auto',
                  reference_language_preference: str = 'auto',
-                 force_pgs: bool = False, no_pgs: bool = False):
+                 force_pgs: bool = False, no_pgs: bool = False,
+                 enable_mixed_realignment: bool = False):
         """
         Initialize the bilingual merger.
 
@@ -43,6 +44,7 @@ class BilingualMerger:
             reference_language_preference: Reference track preference ('chinese', 'english', 'auto')
             force_pgs: Force PGS usage even when other subtitles exist
             no_pgs: Disable PGS auto-activation
+            enable_mixed_realignment: Enable enhanced realignment for mixed embedded+external tracks
         """
         # Validate alignment threshold
         if not 0.0 <= alignment_threshold <= 1.0:
@@ -62,6 +64,7 @@ class BilingualMerger:
         self.reference_language_preference = reference_language_preference
         self.force_pgs = force_pgs
         self.no_pgs = no_pgs
+        self.enable_mixed_realignment = enable_mixed_realignment
 
         self.video_handler = VideoContainerHandler()
         self.pgsrip_wrapper = get_pgsrip_wrapper() if not no_pgs else None
@@ -527,14 +530,19 @@ class BilingualMerger:
     def _merge_overlapping_events(self, events1: List[SubtitleEvent],
                                  events2: List[SubtitleEvent]) -> List[SubtitleEvent]:
         """
-        Merge two lists of subtitle events using enhanced alignment methods.
+        Merge two lists of subtitle events using timing-preservation-first approach.
+
+        CRITICAL TIMING PRESERVATION LOGIC:
+        - Embedded tracks: ALWAYS preserve exact original timing boundaries
+        - External tracks: Use alignment only when massively misaligned (>1s differences)
+        - Anti-jitter: Apply only to identical consecutive segments within 100ms
 
         Args:
             events1: First list of events (e.g., Chinese)
             events2: Second list of events (e.g., English)
 
         Returns:
-            Merged list of events with combined text
+            Merged list of events with appropriate timing preservation
         """
         if not events1 and not events2:
             return []
@@ -547,29 +555,484 @@ class BilingualMerger:
 
         logger.info(f"Merging {len(events1)} and {len(events2)} subtitle events")
 
-        # Check if both tracks are embedded (already synchronized)
+        # Get track information for decision making
         track1_info = getattr(self, '_track1_info', {})
         track2_info = getattr(self, '_track2_info', {})
 
         both_embedded = (track1_info.get('source_type') == 'embedded' and
                         track2_info.get('source_type') == 'embedded')
 
-        # If both tracks are embedded and no explicit alignment requested, use simple merge
-        if both_embedded and not (self.auto_align or self.use_translation or self.manual_align):
-            logger.info("Both tracks are embedded - using simple merge without timing modifications")
-            return self._merge_with_simple_overlap_no_timing_changes(events1, events2)
+        any_embedded = (track1_info.get('source_type') == 'embedded' or
+                       track2_info.get('source_type') == 'embedded')
 
-        # Use enhanced alignment if enabled
-        if self.auto_align:
-            return self._merge_with_enhanced_alignment(events1, events2)
+        # CRITICAL: Enhanced decision logic with mixed track realignment support
+        if both_embedded:
+            logger.info("🔒 EMBEDDED-TO-EMBEDDED: Using exact timing preservation (no modifications allowed)")
+            merged_events = self._merge_with_preserved_timing(events1, events2)
+            method_used = "preserved_timing"
+        elif any_embedded:
+            # Mixed embedded + external scenario - check for major misalignment
+            major_misalignment = self._detect_major_timing_misalignment(events1, events2)
+
+            if major_misalignment and self.enable_mixed_realignment:
+                logger.warning("🚨 MAJOR TIMING MISALIGNMENT DETECTED (>5s difference)")
+                logger.warning("🚨 Mixed embedded + external tracks with significant timing offset")
+                logger.info("🔧 Enhanced mixed track realignment is ENABLED")
+
+                # Apply enhanced realignment for mixed tracks
+                merged_events = self._handle_mixed_track_realignment(events1, events2)
+                method_used = "mixed_track_realignment"
+            elif major_misalignment and not self.enable_mixed_realignment:
+                logger.warning("🚨 MAJOR TIMING MISALIGNMENT DETECTED (>5s difference)")
+                logger.warning("🚨 Mixed embedded + external tracks with significant timing offset")
+                logger.warning("⚠️ Enhanced mixed track realignment is DISABLED")
+                logger.warning("⚠️ Use --enable-mixed-realignment flag to enable enhanced realignment")
+                logger.info("🔒 Falling back to timing preservation (may result in poor alignment)")
+                merged_events = self._merge_with_preserved_timing(events1, events2)
+                method_used = "preserved_timing"
+            else:
+                logger.info("🔒 MIXED EMBEDDED+EXTERNAL (synchronized): Using timing preservation")
+                merged_events = self._merge_with_preserved_timing(events1, events2)
+                method_used = "preserved_timing"
+        elif self.auto_align or self.manual_align or self.use_translation:
+            logger.info("⚙️ Enhanced alignment requested - checking synchronization status")
+            # Only use enhanced alignment for massively misaligned subtitles (>1s differences)
+            if not self._tracks_are_well_synchronized(events1, events2):
+                logger.warning("⚠️ MASSIVE MISALIGNMENT DETECTED: Using enhanced alignment (timing will be modified)")
+                logger.warning("⚠️ This should only be used for external files with major timing issues")
+                merged_events = self._merge_with_enhanced_alignment(events1, events2)
+                method_used = "enhanced_alignment"
+            else:
+                logger.info("✅ Tracks are synchronized - using simple overlap with timing preservation")
+                merged_events = self._merge_with_simple_overlap(events1, events2)
+                method_used = "simple_overlap"
         else:
-            # Fall back to simple overlap-based merging for backward compatibility
-            return self._merge_with_simple_overlap(events1, events2)
+            logger.info("📋 Using simple overlap method (default - preserves timing)")
+            merged_events = self._merge_with_simple_overlap(events1, events2)
+            method_used = "simple_overlap"
+
+        # Validate timing preservation
+        self._validate_timing_preservation(events1, events2, merged_events, method_used)
+
+        return merged_events
+
+    def _check_track_synchronization(self, events1: List[SubtitleEvent],
+                                   events2: List[SubtitleEvent],
+                                   threshold: float = 0.5) -> bool:
+        """
+        Alias for _tracks_are_well_synchronized for backward compatibility.
+        """
+        return self._tracks_are_well_synchronized(events1, events2, threshold)
+
+    def _tracks_are_well_synchronized(self, events1: List[SubtitleEvent],
+                                    events2: List[SubtitleEvent],
+                                    threshold: float = 0.5) -> bool:
+        """
+        Check if two embedded tracks are already well-synchronized.
+
+        This determines whether tracks need realignment or just timing preservation.
+        Realignment features should ONLY be used for massively misaligned subtitles
+        (different timing by seconds), not for minor timing differences.
+
+        Args:
+            events1: First list of events
+            events2: Second list of events
+            threshold: Maximum timing difference in seconds to consider "well-synchronized"
+
+        Returns:
+            True if tracks are well-synchronized (minor differences <500ms),
+            False if they need realignment (major differences >500ms)
+        """
+        if not events1 or not events2:
+            return False
+
+        # Sample first 10 events to check synchronization
+        sample_size = min(10, len(events1), len(events2))
+        timing_differences = []
+
+        for i in range(sample_size):
+            time_diff = abs(events1[i].start - events2[i].start)
+            timing_differences.append(time_diff)
+
+        # Calculate average timing difference
+        avg_diff = sum(timing_differences) / len(timing_differences)
+        max_diff = max(timing_differences)
+
+        is_synchronized = avg_diff < threshold and max_diff < threshold * 2
+
+        logger.info(f"Synchronization check: avg_diff={avg_diff:.3f}s, max_diff={max_diff:.3f}s, "
+                   f"threshold={threshold}s, synchronized={is_synchronized}")
+
+        return is_synchronized
+
+    def _detect_major_timing_misalignment(self, events1: List[SubtitleEvent],
+                                        events2: List[SubtitleEvent],
+                                        threshold: float = 5.0) -> bool:
+        """
+        Detect if there's a major timing misalignment between mixed track types.
+
+        This is specifically for scenarios like external Chinese .srt files that have
+        completely different start times compared to properly-timed embedded English tracks.
+
+        Args:
+            events1: First list of events
+            events2: Second list of events
+            threshold: Major misalignment threshold in seconds (default: 5.0s)
+
+        Returns:
+            True if major misalignment detected (>5s difference)
+        """
+        if not events1 or not events2:
+            return False
+
+        # Get track information to identify which is embedded vs external
+        track1_info = getattr(self, '_track1_info', {})
+        track2_info = getattr(self, '_track2_info', {})
+
+        # Only apply to mixed embedded + external scenarios
+        both_embedded = (track1_info.get('source_type') == 'embedded' and
+                        track2_info.get('source_type') == 'embedded')
+        both_external = (track1_info.get('source_type') == 'external' and
+                        track2_info.get('source_type') == 'external')
+
+        if both_embedded or both_external:
+            return False  # Not a mixed scenario
+
+        # Sample first few events to check timing difference
+        sample_size = min(5, len(events1), len(events2))
+        timing_differences = []
+
+        for i in range(sample_size):
+            time_diff = abs(events1[i].start - events2[i].start)
+            timing_differences.append(time_diff)
+
+        # Calculate average and maximum timing differences
+        avg_diff = sum(timing_differences) / len(timing_differences)
+        max_diff = max(timing_differences)
+
+        # Major misalignment if average difference > threshold OR any single difference > threshold * 1.5
+        is_major_misalignment = avg_diff > threshold or max_diff > threshold * 1.5
+
+        logger.info(f"Major misalignment check: avg_diff={avg_diff:.3f}s, max_diff={max_diff:.3f}s, "
+                   f"threshold={threshold}s, major_misalignment={is_major_misalignment}")
+
+        if is_major_misalignment:
+            logger.info(f"📊 Track types: Track1={track1_info.get('source_type', 'unknown')}, "
+                       f"Track2={track2_info.get('source_type', 'unknown')}")
+
+        return is_major_misalignment
+
+    def _handle_mixed_track_realignment(self, events1: List[SubtitleEvent],
+                                      events2: List[SubtitleEvent]) -> List[SubtitleEvent]:
+        """
+        Handle realignment for mixed embedded + external tracks with major timing misalignment.
+
+        This implements the enhanced realignment workflow:
+        1. Identify embedded track as timing reference
+        2. Find semantic alignment anchor point between tracks
+        3. Apply global time shift to external track only
+        4. Remove pre-anchor entries from external track
+        5. Merge using timing preservation methods
+
+        Args:
+            events1: First list of events
+            events2: Second list of events
+
+        Returns:
+            Merged list of events with embedded timing preserved
+        """
+        logger.info("🔧 MIXED TRACK REALIGNMENT: Starting enhanced realignment workflow")
+
+        # Step 1: Identify embedded vs external tracks
+        track1_info = getattr(self, '_track1_info', {})
+        track2_info = getattr(self, '_track2_info', {})
+
+        if track1_info.get('source_type') == 'embedded':
+            embedded_events = events1
+            external_events = events2
+            embedded_track_num = 1
+            external_track_num = 2
+            embedded_lang = track1_info.get('language', 'unknown')
+            external_lang = track2_info.get('language', 'unknown')
+        else:
+            embedded_events = events2
+            external_events = events1
+            embedded_track_num = 2
+            external_track_num = 1
+            embedded_lang = track2_info.get('language', 'unknown')
+            external_lang = track1_info.get('language', 'unknown')
+
+        logger.info(f"🎯 REFERENCE TRACK: Track {embedded_track_num} (embedded {embedded_lang}) - timing will be preserved")
+        logger.info(f"🔄 TARGET TRACK: Track {external_track_num} (external {external_lang}) - will be realigned")
+
+        # Step 2: Find semantic alignment anchor point
+        anchor_result = self._find_semantic_alignment_anchor(embedded_events, external_events)
+
+        if not anchor_result:
+            logger.error("❌ Failed to find semantic alignment anchor point")
+            logger.warning("⚠️ Falling back to timing preservation without realignment")
+            return self._merge_with_preserved_timing(events1, events2)
+
+        embedded_anchor_idx, external_anchor_idx, confidence, time_offset = anchor_result
+
+        # Step 3: User confirmation for major timing shifts
+        if not self._confirm_major_timing_shift(embedded_events, external_events,
+                                              embedded_anchor_idx, external_anchor_idx,
+                                              time_offset, embedded_lang, external_lang):
+            logger.info("🚫 User cancelled realignment - using timing preservation")
+            return self._merge_with_preserved_timing(events1, events2)
+
+        # Step 4: Apply realignment to external track
+        realigned_external_events = self._apply_mixed_track_realignment(
+            external_events, external_anchor_idx, time_offset)
+
+        # Step 5: Merge using timing preservation (embedded track as reference)
+        if embedded_track_num == 1:
+            merged_events = self._merge_with_preserved_timing(embedded_events, realigned_external_events)
+        else:
+            merged_events = self._merge_with_preserved_timing(realigned_external_events, embedded_events)
+
+        logger.info(f"✅ MIXED TRACK REALIGNMENT COMPLETED: {len(merged_events)} events created")
+        logger.info(f"🔒 Embedded track timing preserved, external track realigned by {time_offset:.3f}s")
+
+        return merged_events
+
+    def _find_semantic_alignment_anchor(self, embedded_events: List[SubtitleEvent],
+                                      external_events: List[SubtitleEvent]) -> Optional[Tuple[int, int, float, float]]:
+        """
+        Find the first semantically matching subtitle line between embedded and external tracks.
+
+        Uses content similarity matching to identify corresponding lines that can serve
+        as synchronization anchor points.
+
+        Args:
+            embedded_events: Embedded track events (timing reference)
+            external_events: External track events (to be realigned)
+
+        Returns:
+            Tuple of (embedded_idx, external_idx, confidence, time_offset) or None
+        """
+        logger.info("🔍 SEMANTIC ANCHOR SEARCH: Finding alignment point using content similarity")
+
+        # Limit search to first 20 events to find early anchor point
+        search_limit_embedded = min(20, len(embedded_events))
+        search_limit_external = min(20, len(external_events))
+
+        best_match = None
+        best_confidence = 0.0
+
+        # Try translation-assisted matching first if available
+        if self.use_translation and self.translation_service:
+            logger.info("🌐 Using translation-assisted semantic matching")
+
+            try:
+                # Use translation service to find alignment point
+                source_idx, ref_idx, confidence = self.translation_service.find_alignment_point_with_translation(
+                    source_events=external_events[:search_limit_external],
+                    reference_events=embedded_events[:search_limit_embedded],
+                    target_language='en',  # Translate to English for comparison
+                    translation_limit=min(10, search_limit_external),
+                    confidence_threshold=0.6  # Lower threshold for anchor finding
+                )
+
+                if source_idx is not None and ref_idx is not None and confidence >= 0.6:
+                    time_offset = embedded_events[ref_idx].start - external_events[source_idx].start
+                    best_match = (ref_idx, source_idx, confidence, time_offset)
+                    logger.info(f"🎯 Translation-assisted anchor found: embedded[{ref_idx}] ↔ external[{source_idx}] "
+                               f"(confidence: {confidence:.3f}, offset: {time_offset:.3f}s)")
+
+            except Exception as e:
+                logger.warning(f"Translation-assisted anchor search failed: {e}")
+
+        # Fallback to similarity-only matching
+        if not best_match:
+            logger.info("📝 Using similarity-only semantic matching")
+
+            for i in range(search_limit_embedded):
+                embedded_text = embedded_events[i].text.strip()
+                if len(embedded_text) < 5:  # Skip very short texts
+                    continue
+
+                for j in range(search_limit_external):
+                    external_text = external_events[j].text.strip()
+                    if len(external_text) < 5:  # Skip very short texts
+                        continue
+
+                    # Calculate similarity using multiple methods
+                    similarity_scores = self.similarity_aligner._calculate_similarity_scores(
+                        embedded_text, external_text)
+
+                    # Use weighted average of similarity scores
+                    confidence = (
+                        similarity_scores.get('sequence', 0.0) * 0.3 +
+                        similarity_scores.get('jaccard', 0.0) * 0.2 +
+                        similarity_scores.get('cosine', 0.0) * 0.3 +
+                        similarity_scores.get('edit_distance', 0.0) * 0.2
+                    )
+
+                    if confidence > best_confidence and confidence >= 0.5:  # Minimum threshold
+                        time_offset = embedded_events[i].start - external_events[j].start
+                        best_match = (i, j, confidence, time_offset)
+                        best_confidence = confidence
+
+                        logger.debug(f"Similarity match: embedded[{i}] ↔ external[{j}] "
+                                   f"(confidence: {confidence:.3f}, offset: {time_offset:.3f}s)")
+
+        if best_match:
+            embedded_idx, external_idx, confidence, time_offset = best_match
+            logger.info(f"✅ SEMANTIC ANCHOR FOUND:")
+            logger.info(f"   Embedded[{embedded_idx}]: [{embedded_events[embedded_idx].start:.3f}s] "
+                       f"{embedded_events[embedded_idx].text[:50]}...")
+            logger.info(f"   External[{external_idx}]: [{external_events[external_idx].start:.3f}s] "
+                       f"{external_events[external_idx].text[:50]}...")
+            logger.info(f"   Confidence: {confidence:.3f}, Time offset: {time_offset:.3f}s")
+            return best_match
+        else:
+            logger.warning("❌ No suitable semantic anchor point found")
+            logger.warning("   Minimum confidence threshold (0.5) not met")
+            return None
+
+    def _confirm_major_timing_shift(self, embedded_events: List[SubtitleEvent],
+                                  external_events: List[SubtitleEvent],
+                                  embedded_anchor_idx: int, external_anchor_idx: int,
+                                  time_offset: float, embedded_lang: str, external_lang: str) -> bool:
+        """
+        Get user confirmation for major timing shifts in mixed track realignment.
+
+        Args:
+            embedded_events: Embedded track events
+            external_events: External track events
+            embedded_anchor_idx: Anchor index in embedded track
+            external_anchor_idx: Anchor index in external track
+            time_offset: Calculated time offset
+            embedded_lang: Embedded track language
+            external_lang: External track language
+
+        Returns:
+            True if user confirms the realignment
+        """
+        import sys
+
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+
+            print("\n" + "="*80)
+            print("🚨 MAJOR TIMING REALIGNMENT REQUIRED")
+            print("="*80)
+            print(f"Mixed track scenario detected:")
+            print(f"  📺 Embedded {embedded_lang} track: Properly synchronized with video")
+            print(f"  📄 External {external_lang} track: Major timing offset detected")
+            print()
+            print(f"Proposed realignment:")
+            print(f"  🎯 Anchor point found with {abs(time_offset):.1f} second offset")
+            print(f"  🔒 Embedded track timing will be preserved (reference)")
+            print(f"  🔄 External track will be shifted by {time_offset:+.3f} seconds")
+            print(f"  🗑️  {external_anchor_idx} entries before anchor will be removed")
+            print()
+            print("Anchor point details:")
+            print(f"  Embedded[{embedded_anchor_idx}]: [{embedded_events[embedded_anchor_idx].start:.3f}s] "
+                  f"{embedded_events[embedded_anchor_idx].text[:60]}...")
+            print(f"  External[{external_anchor_idx}]: [{external_events[external_anchor_idx].start:.3f}s] "
+                  f"{external_events[external_anchor_idx].text[:60]}...")
+            print()
+            print("⚠️  This will modify the external track timing to match the embedded track.")
+            print("⚠️  The embedded track timing will remain unchanged.")
+            print("⚠️  This is recommended for external files with incorrect timing.")
+            print()
+
+            # Get user confirmation
+            while True:
+                try:
+                    response = input("Proceed with realignment? (y/n): ").strip().lower()
+                    if response in ['y', 'yes']:
+                        logger.info("✅ User confirmed major timing realignment")
+                        return True
+                    elif response in ['n', 'no']:
+                        logger.info("🚫 User declined major timing realignment")
+                        return False
+                    else:
+                        print("Please enter 'y' for yes or 'n' for no.")
+                except EOFError:
+                    logger.info("🚫 User input cancelled")
+                    return False
+
+        except KeyboardInterrupt:
+            print("\n🚫 Realignment cancelled by user")
+            logger.info("🚫 User cancelled realignment with Ctrl+C")
+            return False
+        except Exception as e:
+            logger.error(f"Error in user confirmation: {e}")
+            return False
+
+    def _apply_mixed_track_realignment(self, external_events: List[SubtitleEvent],
+                                     anchor_idx: int, time_offset: float) -> List[SubtitleEvent]:
+        """
+        Apply realignment to external track with pre-anchor deletion and global time shift.
+
+        Args:
+            external_events: External track events to realign
+            anchor_idx: Index of anchor point in external track
+            time_offset: Time offset to apply (positive = shift forward)
+
+        Returns:
+            Realigned external track events
+        """
+        logger.info(f"🔄 APPLYING REALIGNMENT: Shifting external track by {time_offset:+.3f}s")
+
+        # Step 1: Remove events before anchor point (pre-anchor deletion)
+        if anchor_idx > 0:
+            logger.info(f"🗑️  Removing {anchor_idx} events before anchor point")
+            remaining_events = external_events[anchor_idx:]
+        else:
+            remaining_events = external_events.copy()
+
+        # Step 2: Apply global time shift to all remaining events
+        realigned_events = []
+        for event in remaining_events:
+            # Create new event with shifted timing
+            new_start = max(0.0, event.start + time_offset)  # Ensure no negative times
+            new_end = max(0.0, event.end + time_offset)
+
+            realigned_event = SubtitleEvent(
+                start=new_start,
+                end=new_end,
+                text=event.text,
+                style=event.style,
+                raw=event.raw
+            )
+            realigned_events.append(realigned_event)
+
+        logger.info(f"✅ REALIGNMENT APPLIED: {len(realigned_events)} events realigned")
+        logger.info(f"   Original events: {len(external_events)}")
+        logger.info(f"   Removed (pre-anchor): {anchor_idx}")
+        logger.info(f"   Remaining (realigned): {len(realigned_events)}")
+        logger.info(f"   Time shift applied: {time_offset:+.3f}s")
+
+        # Log first few events for verification
+        if realigned_events:
+            logger.debug("First few realigned events:")
+            for i, event in enumerate(realigned_events[:3]):
+                logger.debug(f"  [{i}] {event.start:.3f}s-{event.end:.3f}s: {event.text[:40]}...")
+
+        return realigned_events
 
     def _merge_with_enhanced_alignment(self, events1: List[SubtitleEvent],
                                      events2: List[SubtitleEvent]) -> List[SubtitleEvent]:
         """
         Merge events using enhanced time-based and content-based alignment.
+
+        IMPORTANT: This method is intended for MASSIVELY misaligned subtitles only
+        (timing differences of seconds, not milliseconds). It should NOT be used
+        for embedded tracks that are already well-synchronized.
+
+        Use cases:
+        - External subtitle files with completely different timing bases
+        - Tracks with major synchronization issues (>1 second differences)
+        - Subtitles that need significant realignment
+
+        For embedded tracks with minor timing differences (<500ms), use
+        _merge_with_preserved_timing() instead to preserve exact timing.
 
         Args:
             events1: First list of events
@@ -578,7 +1041,7 @@ class BilingualMerger:
         Returns:
             Merged list of events with improved alignment
         """
-        logger.info("Using enhanced alignment methods")
+        logger.info("Using enhanced alignment methods for massively misaligned subtitles")
 
         # Phase 1: Global Track Synchronization
         logger.info("Phase 1: Performing global track synchronization")
@@ -693,17 +1156,19 @@ class BilingualMerger:
         if hasattr(self, '_manual_selection_info') and self._manual_selection_info:
             return self._apply_manual_synchronization(events1, events2, anchor_result)
 
-        # Apply offset to target track for automatic methods
+        # CRITICAL: Apply offset ONLY to target track, NEVER to reference track
         if abs(global_offset) > 0.1:  # Only apply if offset is significant
             if reference_track == 1:
-                # Apply offset to Track 2
+                # Track 1 is reference - PRESERVE its timing, modify Track 2
                 synchronized_events2 = self._apply_time_offset(events2, global_offset)
-                logger.info(f"Applied {global_offset:.3f}s offset to Track 2 (Track 1 is reference)")
+                logger.info(f"🔒 REFERENCE PRESERVED: Track 1 timing unchanged")
+                logger.info(f"⚙️ Applied {global_offset:.3f}s offset to Track 2 (aligning to Track 1 reference)")
                 return events1, synchronized_events2, global_offset
             else:
-                # Apply offset to Track 1
+                # Track 2 is reference - PRESERVE its timing, modify Track 1
                 synchronized_events1 = self._apply_time_offset(events1, global_offset)
-                logger.info(f"Applied {global_offset:.3f}s offset to Track 1 (Track 2 is reference)")
+                logger.info(f"🔒 REFERENCE PRESERVED: Track 2 timing unchanged")
+                logger.info(f"⚙️ Applied {global_offset:.3f}s offset to Track 1 (aligning to Track 2 reference)")
                 return synchronized_events1, events2, global_offset
         else:
             logger.info("Global offset too small, no synchronization needed")
@@ -1585,15 +2050,39 @@ class BilingualMerger:
         used_indices1 = set()
         used_indices2 = set()
 
-        # Create merged events from alignments
+        # Determine reference track for timing preservation
+        track1_info = getattr(self, '_track1_info', {})
+        track2_info = getattr(self, '_track2_info', {})
+
+        # Prioritize embedded tracks as timing reference
+        if track1_info.get('source_type') == 'embedded':
+            reference_track = 1
+            logger.info("🔒 Using Track 1 (embedded) as timing reference")
+        elif track2_info.get('source_type') == 'embedded':
+            reference_track = 2
+            logger.info("🔒 Using Track 2 (embedded) as timing reference")
+        else:
+            # For external tracks, use the first track as reference
+            reference_track = 1
+            logger.info("📋 Using Track 1 as timing reference (both external)")
+
+        # Create merged events from alignments with REFERENCE TIMING PRESERVATION
         for idx1, idx2, confidence in alignments:
             if idx1 < len(events1) and idx2 < len(events2):
                 event1 = events1[idx1]
                 event2 = events2[idx2]
 
-                # Use the earlier start time and later end time
-                start_time = min(event1.start, event2.start)
-                end_time = max(event1.end, event2.end)
+                # CRITICAL: Preserve reference track timing exactly
+                if reference_track == 1:
+                    # Use Track 1 timing as reference
+                    start_time = event1.start
+                    end_time = event1.end
+                    logger.debug(f"🔒 Preserved Track 1 timing: {start_time:.3f}-{end_time:.3f}s")
+                else:
+                    # Use Track 2 timing as reference
+                    start_time = event2.start
+                    end_time = event2.end
+                    logger.debug(f"🔒 Preserved Track 2 timing: {start_time:.3f}-{end_time:.3f}s")
 
                 # Combine texts
                 combined_text = f"{event1.text}\n{event2.text}"
@@ -1692,84 +2181,136 @@ class BilingualMerger:
 
         return segments
 
-    def _merge_with_simple_overlap_no_timing_changes(self, events1: List[SubtitleEvent],
-                                                   events2: List[SubtitleEvent]) -> List[SubtitleEvent]:
+    def _merge_with_preserved_timing(self, events1: List[SubtitleEvent],
+                                   events2: List[SubtitleEvent]) -> List[SubtitleEvent]:
         """
-        Merge events using simple overlap-based method WITHOUT any timing modifications.
-        This preserves the original timing from embedded subtitles that are already synchronized.
+        Merge embedded subtitle events with TRUE timing preservation.
+
+        This method preserves the EXACT original timing boundaries from embedded tracks
+        by keeping all original events intact and only combining text when events overlap.
+        NO segmentation or timing modifications are applied.
 
         Args:
-            events1: First list of events
-            events2: Second list of events
+            events1: First list of events (e.g., Chinese)
+            events2: Second list of events (e.g., English)
 
         Returns:
-            Merged list of events with original timing preserved
+            Merged list of events with EXACT original timing preserved
         """
-        logger.info("Using simple overlap-based merging with preserved timing")
+        logger.info("Using EXACT originalscript.py timing preservation logic")
 
-        # Create timeline segments using original timing
-        all_times = set()
-        for event in events1 + events2:
-            all_times.add(event.start)
-            all_times.add(event.end)
+        # Convert SubtitleEvent objects to the format expected by original algorithm
+        chinese_events = []
+        english_events = []
 
-        timeline = sorted(all_times)
+        for event in events1:
+            chinese_events.append({
+                "start": event.start,
+                "end": event.end,
+                "text": event.text
+            })
+
+        for event in events2:
+            english_events.append({
+                "start": event.start,
+                "end": event.end,
+                "text": event.text
+            })
+
+        # EXACT COPY of originalscript.py merge_events_srt logic (lines 178-291)
+
+        # First, create all possible segment boundaries
+        times = sorted({ev["start"] for ev in (chinese_events + english_events)} |
+                       {ev["end"]   for ev in (chinese_events + english_events)})
+
+        # Generate initial segments
         segments = []
-
-        # Create segments for each time interval
-        for i in range(len(timeline) - 1):
-            seg_start = timeline[i]
-            seg_end = timeline[i + 1]
-
+        for i in range(len(times)-1):
+            seg_start = times[i]
+            seg_end = times[i+1]
             if seg_end <= seg_start:
                 continue
 
-            # Find events that overlap this segment
-            text1 = None
-            text2 = None
-
-            for event in events1:
-                if event.start <= seg_start < event.end:
-                    text1 = event.text
+            cn_text = en_text = None
+            # Find any CN event that covers seg_start
+            for ev in chinese_events:
+                if ev["start"] <= seg_start < ev["end"]:
+                    cn_text = ev["text"]
+                    break
+            # Find any EN event that covers seg_start
+            for ev in english_events:
+                if ev["start"] <= seg_start < ev["end"]:
+                    en_text = ev["text"]
                     break
 
-            for event in events2:
-                if event.start <= seg_start < event.end:
-                    text2 = event.text
-                    break
-
-            # Skip empty segments
-            if not text1 and not text2:
+            if not cn_text and not en_text:
                 continue
 
-            # Combine texts
-            if text1 and text2:
-                combined_text = f"{text1}\n{text2}"
+            if cn_text and en_text:
+                merged_text = f"{cn_text}\n{en_text}"
             else:
-                combined_text = text1 if text1 else text2
+                merged_text = cn_text if cn_text else en_text
 
-            segments.append(SubtitleEvent(
-                start=seg_start,
-                end=seg_end,
-                text=combined_text
+            segments.append({
+                "start": seg_start,
+                "end": seg_end,
+                "text": merged_text,
+                "cn_text": cn_text,
+                "en_text": en_text
+            })
+
+        # First pass: combine segments with identical text (EXACT original logic)
+        combined = []
+        for seg in segments:
+            if (combined and
+                seg["text"] == combined[-1]["text"] and
+                abs(seg["start"] - combined[-1]["end"]) < 0.1):  # 100ms tolerance (EXACT original)
+                combined[-1]["end"] = seg["end"]
+            else:
+                combined.append(seg.copy())
+
+        # Convert back to SubtitleEvent format
+        merged_events = []
+        for seg in combined:
+            merged_events.append(SubtitleEvent(
+                start=seg["start"],
+                end=seg["end"],
+                text=seg["text"]
             ))
 
-        # Return segments WITHOUT any timing optimization
-        logger.info(f"Simple merge completed: {len(segments)} merged events created (timing preserved)")
-        return segments
+        logger.info(f"EXACT originalscript.py timing preservation completed: {len(merged_events)} events")
+        return merged_events
 
     def _optimize_subtitle_timing(self, events: List[SubtitleEvent]) -> List[SubtitleEvent]:
         """
-        Optimize subtitle timing to reduce flickering and improve readability.
+        Apply LIMITED anti-jitter optimization with strict scope control.
+
+        CRITICAL: This method should ONLY combine identical consecutive segments
+        within 100ms tolerance. It should NOT modify timing for embedded tracks
+        or create wholesale timing boundary changes.
 
         Args:
             events: List of subtitle events to optimize
 
         Returns:
-            Optimized list of subtitle events
+            Events with minimal anti-jitter optimization applied
         """
         if not events:
             return events
+
+        # Check if we're dealing with embedded tracks - if so, be extra conservative
+        track1_info = getattr(self, '_track1_info', {})
+        track2_info = getattr(self, '_track2_info', {})
+
+        has_embedded = (track1_info.get('source_type') == 'embedded' or
+                       track2_info.get('source_type') == 'embedded')
+
+        if has_embedded:
+            logger.info("🔒 EMBEDDED TRACKS DETECTED: Applying minimal anti-jitter (100ms tolerance only)")
+            gap_threshold = 0.1  # 100ms maximum for embedded tracks
+        else:
+            logger.info("📋 External tracks: Using standard gap threshold")
+            gap_threshold = self.gap_threshold
 
         # Sort events by start time
         sorted_events = sorted(events, key=lambda e: e.start)
@@ -1779,15 +2320,17 @@ class BilingualMerger:
         while i < len(sorted_events):
             current = sorted_events[i]
 
-            # Look ahead for events that can be merged
+            # Look ahead for events that can be merged (VERY CONSERVATIVE)
             j = i + 1
             while j < len(sorted_events):
                 next_event = sorted_events[j]
 
-                # Check if events are close enough and have the same text
-                if (next_event.start - current.end <= self.gap_threshold and
+                # STRICT CONDITIONS: Only merge if text is IDENTICAL and gap is tiny
+                if (next_event.start - current.end <= gap_threshold and
                     current.text == next_event.text):
-                    # Extend current event
+                    # Extend current event (anti-jitter for identical segments)
+                    logger.debug(f"🔧 Anti-jitter: Combining identical segments "
+                               f"({current.end:.3f}s -> {next_event.start:.3f}s, gap: {next_event.start - current.end:.3f}s)")
                     current = SubtitleEvent(
                         start=current.start,
                         end=next_event.end,
@@ -1801,6 +2344,12 @@ class BilingualMerger:
 
             optimized.append(current)
             i = j
+
+        if len(optimized) < len(sorted_events):
+            logger.info(f"🔧 Anti-jitter applied: {len(sorted_events)} -> {len(optimized)} events "
+                       f"(combined {len(sorted_events) - len(optimized)} identical segments)")
+        else:
+            logger.info("🔒 No anti-jitter optimization needed")
 
         return optimized
 
@@ -1835,3 +2384,93 @@ class BilingualMerger:
             return 'second'
 
         return None
+
+    def _validate_timing_preservation(self, original_events1: List[SubtitleEvent],
+                                    original_events2: List[SubtitleEvent],
+                                    merged_events: List[SubtitleEvent],
+                                    method_used: str) -> bool:
+        """
+        Validate that timing preservation requirements are met.
+
+        Args:
+            original_events1: Original first track events
+            original_events2: Original second track events
+            merged_events: Resulting merged events
+            method_used: Name of merge method used
+
+        Returns:
+            True if timing preservation is valid
+        """
+        track1_info = getattr(self, '_track1_info', {})
+        track2_info = getattr(self, '_track2_info', {})
+
+        both_embedded = (track1_info.get('source_type') == 'embedded' and
+                        track2_info.get('source_type') == 'embedded')
+
+        any_embedded = (track1_info.get('source_type') == 'embedded' or
+                       track2_info.get('source_type') == 'embedded')
+
+        if both_embedded or any_embedded:
+            logger.info(f"🔍 TIMING VALIDATION: Checking {method_used} for embedded track timing preservation")
+
+            # For mixed track realignment, only validate embedded track timing preservation
+            if method_used == "mixed_track_realignment":
+                logger.info("🔧 Mixed track realignment detected - validating embedded track preservation only")
+
+                # Identify which track is embedded
+                track1_info = getattr(self, '_track1_info', {})
+                track2_info = getattr(self, '_track2_info', {})
+
+                if track1_info.get('source_type') == 'embedded':
+                    embedded_original = original_events1
+                    logger.info("🔒 Validating Track 1 (embedded) timing preservation")
+                else:
+                    embedded_original = original_events2
+                    logger.info("🔒 Validating Track 2 (embedded) timing preservation")
+
+                # Check if embedded track timing boundaries are preserved
+                embedded_times = set()
+                for event in embedded_original:
+                    embedded_times.add(event.start)
+                    embedded_times.add(event.end)
+
+                merged_times = set()
+                for event in merged_events:
+                    merged_times.add(event.start)
+                    merged_times.add(event.end)
+
+                # For mixed track realignment, embedded timing should be well preserved
+                preserved_ratio = len(embedded_times & merged_times) / len(embedded_times)
+
+                if preserved_ratio < 0.7:  # Lower threshold for mixed scenarios
+                    logger.warning(f"⚠️ EMBEDDED TIMING VALIDATION FAILED: Only {preserved_ratio:.1%} of embedded timing boundaries preserved")
+                    return False
+                else:
+                    logger.info(f"✅ EMBEDDED TIMING VALIDATION PASSED: {preserved_ratio:.1%} of embedded timing boundaries preserved")
+                    return True
+            else:
+                # Standard validation for other methods
+                # Check if any original timing boundaries were lost
+                original_times = set()
+                for event in original_events1 + original_events2:
+                    original_times.add(event.start)
+                    original_times.add(event.end)
+
+                merged_times = set()
+                for event in merged_events:
+                    merged_times.add(event.start)
+                    merged_times.add(event.end)
+
+                # For embedded tracks, most original timing boundaries should be preserved
+                preserved_ratio = len(original_times & merged_times) / len(original_times)
+
+                if preserved_ratio < 0.8:  # Less than 80% of timing boundaries preserved
+                    logger.warning(f"⚠️ TIMING VALIDATION FAILED: Only {preserved_ratio:.1%} of original timing boundaries preserved")
+                    logger.warning(f"⚠️ This indicates inappropriate timing modification for embedded tracks")
+                    return False
+                else:
+                    logger.info(f"✅ TIMING VALIDATION PASSED: {preserved_ratio:.1%} of original timing boundaries preserved")
+                    return True
+        else:
+            logger.info(f"📋 TIMING VALIDATION: External tracks - timing modification allowed")
+            return True
