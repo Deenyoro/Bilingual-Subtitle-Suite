@@ -4,6 +4,7 @@ Practical examples and workflows for common subtitle processing scenarios.
 
 ## Table of Contents
 - [Anime Processing](#anime-processing)
+- [Misaligned Subtitle Processing](#misaligned-subtitle-processing)
 - [Movie Processing](#movie-processing)
 - [TV Series Workflows](#tv-series-workflows)
 - [Mixed Content Scenarios](#mixed-content-scenarios)
@@ -94,6 +95,184 @@ Track 2: Japanese (Score: 88.5) - Main dialogue track
 
 **Automatic Selection**: System correctly chooses Track 0 for English
 **Manual Override**: `python biss.py merge anime.mkv --english-track 0`
+
+## Misaligned Subtitle Processing
+
+### Scenario 1: Made in Abyss Season 02 - Individual Episode Processing
+
+**Setup**: Anime episodes with embedded English subtitles and misaligned external Chinese subtitles
+
+**File Structure**:
+```
+Season 02/
+├── Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].mkv
+├── Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].zh.srt
+├── Made in Abyss S02E02-Capital of the Unreturned [1080p Dual Audio BD Remux FLAC-TTGA].mkv
+└── Made in Abyss S02E02-Capital of the Unreturned [1080p Dual Audio BD Remux FLAC-TTGA].zh.srt
+```
+
+**Problem**: Chinese subtitles are significantly misaligned (several seconds off) compared to embedded English subtitles
+
+**Single Episode Processing**:
+```bash
+python biss.py merge "Season 02/Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].mkv" \
+  --auto-align \
+  --use-translation \
+  --sync-strategy translation \
+  --reference-language english \
+  --alignment-threshold 0.8
+```
+
+**Process Explanation**:
+1. **Extract embedded English subtitles** from .mkv file (immutable timing reference)
+2. **Load external Chinese subtitles** from .zh.srt file
+3. **Auto-detect alignment anchor point** using content similarity with translation API
+4. **Calculate global time offset** needed to align Chinese to English timing
+5. **Apply global time shift** to ALL Chinese subtitle timestamps
+6. **Merge with anti-jitter logic** to prevent subtitle flickering
+7. **Output bilingual file** with exact video filename + `.zh-en.srt`
+
+**Expected Output**:
+```
+Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].zh-en.srt
+```
+
+**Key Features Demonstrated**:
+- ✅ Embedded English subtitles preserved as timing reference
+- ✅ Translation-assisted content similarity matching
+- ✅ Global time offset calculation and application
+- ✅ Complete video filename preservation
+- ✅ Automatic Plex-compatible naming (`.zh-en.srt`)
+
+### Scenario 2: Made in Abyss Season 02 - Batch Processing
+
+**Setup**: Process multiple episodes with misaligned subtitles automatically
+
+**Batch Processing Command**:
+```bash
+python biss.py batch-merge "Season 02" \
+  --auto-align \
+  --use-translation \
+  --sync-strategy translation \
+  --reference-language english \
+  --alignment-threshold 0.8 \
+  --auto-confirm
+```
+
+**Batch Process Output**:
+```
+================================================================================
+BATCH PROCESSING: FILE 3/4
+================================================================================
+Current file: Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].mkv
+
+Analyzing video file...
+Detected subtitle tracks:
+  - Track 3: eng (ass) - Signs & Songs
+  - Track 4: eng (ass) - Dialogue
+  - Track 5: eng (ass) - Honorific
+External subtitle files:
+  - Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].zh.srt
+
+⚠️ MASSIVE MISALIGNMENT DETECTED: Using enhanced alignment (timing will be modified)
+⚠️ This should only be used for external files with major timing issues
+✅ Successfully processed: Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].mkv
+```
+
+**Final Results**:
+```
+Season 02/
+├── Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].zh-en.srt
+├── Made in Abyss S02E02-Capital of the Unreturned [1080p Dual Audio BD Remux FLAC-TTGA].zh-en.srt
+└── ... (original files preserved)
+```
+
+**Batch Processing Benefits**:
+- ✅ Processes multiple episodes automatically
+- ✅ Consistent alignment strategy across all files
+- ✅ No manual intervention required with `--auto-confirm`
+- ✅ Detailed progress reporting for each file
+- ✅ Preserves exact video filenames for all outputs
+
+### Scenario 3: Advanced Misalignment with Manual Verification
+
+**Setup**: Critical content requiring manual anchor point verification
+
+**Interactive Processing**:
+```bash
+python biss.py merge "Made in Abyss S02E01.mkv" \
+  --auto-align \
+  --use-translation \
+  --manual-align \
+  --sync-strategy translation \
+  --alignment-threshold 0.9 \
+  --debug
+```
+
+**Manual Alignment Interface**:
+```
+Manual Anchor Point Selection:
+
+Translation-Assisted Alignment Results:
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                            ANCHOR POINT CANDIDATES                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Option 1: [Confidence: 92.5%]
+  Chinese [12.500s]: 我在遇到妳之前
+  English  [7.400s]: You know, until I met you,
+  Translation: "Before I met you"
+  Time difference: +5.100s
+
+Option 2: [Confidence: 89.3%]
+  Chinese [25.800s]: 收養了孤苦無依的我的這個男人
+  English [20.700s]: The man who took me in when I had no relatives
+  Translation: "The man who adopted helpless me"
+  Time difference: +5.100s
+
+Option 3: [Confidence: 87.1%]
+  Chinese [45.200s]: 據說那是在某個風平浪靜的日子
+  English [40.100s]: One calm day,
+  Translation: "It is said that it was on a calm day"
+  Time difference: +5.100s
+
+Enter your choice (1-3) or 'a' for automatic: 1
+```
+
+**Result**: Precise 5.100s offset applied to all Chinese subtitles
+
+### Scenario 4: Bulk Alignment Without Merging
+
+**Setup**: Align Chinese subtitles to English timing without creating bilingual files
+
+**Use Case**: When you want aligned Chinese subtitles but not bilingual format
+
+**Command**:
+```bash
+python biss.py batch-align "Season 02" \
+  --source-pattern "*.zh.srt" \
+  --reference-pattern "*.mkv" \
+  --auto-align \
+  --use-translation \
+  --auto-confirm
+```
+
+**Process**:
+1. Finds all `.zh.srt` files in directory
+2. Matches each with corresponding `.mkv` file
+3. Extracts embedded English subtitles as reference
+4. Aligns Chinese timing to English timing
+5. Overwrites original `.zh.srt` files with aligned versions
+6. Creates `.bak` backup files automatically
+
+**Output**:
+```
+Season 02/
+├── Made in Abyss S02E01.zh.srt (aligned to embedded English timing)
+├── Made in Abyss S02E01.zh.srt.bak (original backup)
+├── Made in Abyss S02E02.zh.srt (aligned to embedded English timing)
+└── Made in Abyss S02E02.zh.srt.bak (original backup)
+```
 
 ## Movie Processing
 
