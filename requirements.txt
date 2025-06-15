@@ -1,0 +1,57 @@
+# Unified Subtitle Processor Dependencies
+
+# Core Python packages (usually included with Python 3.8+)
+# pathlib - Path manipulation (built-in)
+# typing - Type hints (built-in)
+# dataclasses - Data classes (built-in Python 3.7+)
+# enum - Enumerations (built-in)
+# argparse - Command line parsing (built-in)
+# logging - Logging functionality (built-in)
+# subprocess - Process execution (built-in)
+# json - JSON handling (built-in)
+# re - Regular expressions (built-in)
+# tempfile - Temporary files (built-in)
+# shutil - File operations (built-in)
+# concurrent.futures - Parallel processing (built-in)
+
+# Required dependencies for core functionality
+python-dotenv>=0.19.0      # Environment file support for secure API key management
+requests>=2.25.0           # HTTP requests for translation API
+pysrt>=1.1.0              # SRT subtitle file parsing
+
+# Optional dependencies for enhanced functionality
+google-cloud-translate>=3.8.0  # Google Cloud Translation API (requires API key)
+
+# Encoding detection (recommended - choose one)
+charset-normalizer>=3.0.0  # Preferred encoding detection library
+# chardet>=5.0.0           # Alternative encoding detection library
+
+# Enhanced interactive interface (Windows only)
+# windows-curses>=2.3.0    # Uncomment for Windows systems
+
+# Development and testing dependencies (optional)
+# pytest>=7.0.0            # For running tests
+# black>=22.0.0             # Code formatting
+# flake8>=5.0.0             # Code linting
+# mypy>=1.0.0               # Type checking
+
+# External system dependencies (not installable via pip):
+# - FFmpeg: Required for video processing operations
+# - FFprobe: Required for video analysis (usually comes with FFmpeg)
+#
+# Installation instructions:
+# 
+# Windows:
+#   Download from https://ffmpeg.org/download.html
+#   Or use chocolatey: choco install ffmpeg
+#   Or use winget: winget install FFmpeg
+#
+# macOS:
+#   brew install ffmpeg
+#
+# Ubuntu/Debian:
+#   sudo apt update && sudo apt install ffmpeg
+#
+# CentOS/RHEL/Fedora:
+#   sudo dnf install ffmpeg  # Fedora
+#   sudo yum install ffmpeg  # CentOS/RHEL (may need EPEL repository)
