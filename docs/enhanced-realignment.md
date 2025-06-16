@@ -6,13 +6,18 @@ The Enhanced Realignment feature in Bilingual Subtitle Suite addresses a specifi
 
 ## Problem Scenario
 
-Consider this common situation:
+Consider this common situation with anime episodes:
 - **Video file**: `Made in Abyss S02E01.mkv` with embedded English subtitles properly synchronized to the video
-- **External file**: `Made in Abyss S02E01.zh.srt` with Chinese subtitles that start at completely different times (e.g., 10+ seconds offset)
+- **External file**: `Made in Abyss S02E01.zh.srt` with Chinese subtitles that have major timing differences (50+ seconds offset)
+
+**Real-World Example**:
+- Embedded English subtitle starts at 00:00:11,730: "This compass..."
+- External Chinese subtitle starts at 00:01:08,497: "在這個羅盤..." (same content, 56.8 second offset!)
 
 Without enhanced realignment, the merger would either:
-1. Preserve timing exactly (resulting in mismatched bilingual subtitles)
+1. Preserve timing exactly (resulting in completely mismatched bilingual subtitles)
 2. Apply standard alignment (potentially disrupting the properly-timed embedded track)
+3. Fail to find any alignment points due to the large timing difference
 
 ## Enhanced Realignment Solution
 
@@ -27,13 +32,15 @@ Without enhanced realignment, the merger would either:
 
 #### 1. Scenario Detection
 - Detects mixed track types (embedded + external)
-- Identifies major timing misalignment (>5 seconds difference)
-- Only activates when `--enable-mixed-realignment` flag is used
+- Identifies major timing misalignment (>5 seconds difference, handles 50+ second offsets)
+- Only activates when `--enable-mixed-realignment` flag is used or auto-detected in interactive mode
 
-#### 2. Alignment Point Detection
-- Searches for semantically matching subtitle lines between tracks
-- Uses content similarity scoring (with optional translation assistance)
-- Identifies the first reliable anchor point for synchronization
+#### 2. Enhanced Alignment Point Detection
+- **Cross-Language Content Matching**: Uses translation-assisted semantic matching for Chinese-English pairs
+- **Expanded Search Scope**: Searches up to 40 events from each track to handle large offsets
+- **Multiple Similarity Metrics**: Combines sequence matching, Jaccard similarity, cosine similarity, and edit distance
+- **Lowered Confidence Thresholds**: Accepts matches as low as 0.15 confidence for large offset scenarios
+- **Fallback Strategies**: Multiple detection strategies with automatic fallback
 
 #### 3. Realignment Process
 - Calculates time offset needed to align anchor points
@@ -51,13 +58,22 @@ Without enhanced realignment, the merger would either:
 
 ```bash
 # Enable enhanced realignment for mixed tracks
-biss merge video.mkv --enable-mixed-realignment
+python biss.py merge video.mkv --enable-mixed-realignment
 
-# With translation assistance for better anchor detection
-biss merge video.mkv --enable-mixed-realignment --use-translation --translation-api-key YOUR_KEY
+# Large timing offset handling (50+ second differences)
+python biss.py merge video.mkv --auto-align --use-translation --alignment-threshold 0.3
 
-# Batch processing with enhanced realignment
-biss batch-merge /path/to/videos --enable-mixed-realignment
+# Combined approach for maximum success rate
+python biss.py merge video.mkv --auto-align --use-translation \
+  --alignment-threshold 0.3 --enable-mixed-realignment
+
+# Real-world anime example (Made in Abyss style)
+python biss.py merge "Made in Abyss S02E01.mkv" --auto-align \
+  --use-translation --alignment-threshold 0.3 --enable-mixed-realignment
+
+# Batch processing with enhanced alignment
+python biss.py batch-merge "Season 02" --auto-align --use-translation \
+  --alignment-threshold 0.3 --auto-confirm
 ```
 
 ### Interactive Mode
@@ -70,38 +86,49 @@ The feature is also available in interactive mode with clear prompts and confirm
 - `Made in Abyss S02E01.mkv` - Video with embedded English subtitles
 - `Made in Abyss S02E01.zh.srt` - External Chinese subtitles with timing offset
 
-### Detection Output
+### Detection Output (Real Made in Abyss Example)
 ```
 🚨 MAJOR TIMING MISALIGNMENT DETECTED (>5s difference)
 🚨 Mixed embedded + external tracks with significant timing offset
 🔧 Enhanced mixed track realignment is ENABLED
 
-🔍 SEMANTIC ANCHOR SEARCH: Finding alignment point using content similarity
-🎯 Translation-assisted anchor found: embedded[0] ↔ external[2] (confidence: 0.85, offset: -10.0s)
+🔍 ENHANCED SEMANTIC ALIGNMENT: Searching for content-based anchor point
+🔍 Translation-assisted anchor detection for major timing offsets
+✅ TRANSLATION-ASSISTED ANCHOR FOUND:
+   Embedded[4]: [11.730s] This compass...
+   External[3]: [68.497s] 在這個羅盤…
+   Cross-language similarity: 0.45, Time offset: -56.767s
 
 🚨 MAJOR TIMING REALIGNMENT REQUIRED
 ================================================================================
 Mixed track scenario detected:
-  📺 Embedded en track: Properly synchronized with video
-  📄 External zh track: Major timing offset detected
+  📺 Embedded en track: Properly synchronized with video (reference)
+  📄 External zh track: Major timing offset detected (-56.767s)
 
 Proposed realignment:
-  🎯 Anchor point found with 10.0 second offset
+  🎯 Semantic anchor found: "This compass..." ↔ "在這個羅盤…"
   🔒 Embedded track timing will be preserved (reference)
-  🔄 External track will be shifted by -10.000 seconds
-  🗑️  2 entries before anchor will be removed
+  🔄 External track will be shifted by -56.767 seconds
+  🗑️  3 entries before anchor will be removed (pre-anchor deletion)
 
 ⚠️  This will modify the external track timing to match the embedded track.
 ⚠️  The embedded track timing will remain unchanged.
 ⚠️  This is recommended for external files with incorrect timing.
 
-Proceed with realignment? (y/n):
+Proceed with realignment? (y/n): y
+
+✅ Realignment completed successfully
+📊 Timing preservation: 100% of embedded track boundaries preserved
+📄 Output: Made in Abyss S02E01.zh-en.srt (proper bilingual format)
 ```
 
 ### Result
-- External Chinese track is shifted to align with embedded English track
-- Pre-anchor Chinese entries are removed
+- External Chinese track is shifted by -56.767 seconds to align with embedded English track
+- 3 pre-anchor Chinese entries are removed (content before the alignment point)
 - Final bilingual subtitle maintains perfect video synchronization
+- Each entry contains exactly one Chinese line followed by one English line
+- Zero text duplication in output file
+- Embedded track timing preserved exactly for proper media player auto-detection
 
 ## Technical Details
 

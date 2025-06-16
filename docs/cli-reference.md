@@ -83,10 +83,11 @@ python biss.py merge movie.mkv --chinese external.zh.srt
 ```bash
 --auto-align               # Enable enhanced alignment system
 --manual-align             # Enable interactive anchor selection
---alignment-threshold N    # Confidence threshold (0.0-1.0, default: 0.8)
+--alignment-threshold N    # Confidence threshold (0.0-1.0, default: 0.8, use 0.3 for large offsets)
 --time-threshold N         # Time matching window in seconds (default: 0.5)
 --sync-strategy STRATEGY   # Global sync strategy (see below)
---use-translation         # Enable translation-assisted alignment
+--use-translation         # Enable translation-assisted alignment for cross-language content
+--enable-mixed-realignment # Enable enhanced realignment for mixed embedded+external tracks
 --translation-api-key KEY # Google Translate API key
 ```
 
@@ -114,9 +115,16 @@ python biss.py merge "Movie (2023).mkv"
 # Enhanced alignment with manual control
 python biss.py merge movie.mkv --auto-align --manual-align
 
-# Translation-assisted alignment
+# Large timing offset handling (50+ second differences)
+python biss.py merge movie.mkv --auto-align --use-translation \
+  --alignment-threshold 0.3 --enable-mixed-realignment
+
+# Translation-assisted alignment for cross-language content
 python biss.py merge movie.mkv --auto-align --use-translation \
   --sync-strategy translation --alignment-threshold 0.9
+
+# Mixed track realignment (embedded + external scenarios)
+python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
 
 # Force PGS conversion
 python biss.py merge movie.mkv --force-pgs --pgs-language chi_sim
@@ -325,6 +333,14 @@ python biss.py interactive
 # High-precision anime processing
 python biss.py merge anime.mkv --auto-align --manual-align \
   --use-translation --alignment-threshold 0.95 --debug
+
+# Large timing offset scenarios (Made in Abyss style)
+python biss.py merge "Made in Abyss S02E01.mkv" --auto-align \
+  --use-translation --alignment-threshold 0.3 --enable-mixed-realignment
+
+# Batch process with enhanced alignment for large offsets
+python biss.py batch-merge "Season 02" --auto-align --use-translation \
+  --alignment-threshold 0.3 --auto-confirm
 
 # Batch process with PGS fallback
 python biss.py batch-merge "Season 01" --auto-align --force-pgs \
