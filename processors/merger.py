@@ -951,9 +951,9 @@ class BilingualMerger:
         """
         logger.info("🔍 SEMANTIC ANCHOR SEARCH: Finding alignment point using content similarity")
 
-        # Limit search to first 20 events to find early anchor point
-        search_limit_embedded = min(20, len(embedded_events))
-        search_limit_external = min(20, len(external_events))
+        # Expand search scope for large timing offsets (up to 40 events)
+        search_limit_embedded = min(40, len(embedded_events))
+        search_limit_external = min(40, len(external_events))
 
         best_match = None
         best_confidence = 0.0
@@ -969,10 +969,10 @@ class BilingualMerger:
                     reference_events=embedded_events[:search_limit_embedded],
                     target_language='en',  # Translate to English for comparison
                     translation_limit=min(10, search_limit_external),
-                    confidence_threshold=0.6  # Lower threshold for anchor finding
+                    confidence_threshold=0.3  # Much lower threshold for large offsets
                 )
 
-                if source_idx is not None and ref_idx is not None and confidence >= 0.6:
+                if source_idx is not None and ref_idx is not None and confidence >= 0.3:
                     time_offset = embedded_events[ref_idx].start - external_events[source_idx].start
                     best_match = (ref_idx, source_idx, confidence, time_offset)
                     logger.info(f"🎯 Translation-assisted anchor found: embedded[{ref_idx}] ↔ external[{source_idx}] "
@@ -1007,7 +1007,7 @@ class BilingualMerger:
                         similarity_scores.get('edit_distance', 0.0) * 0.2
                     )
 
-                    if confidence > best_confidence and confidence >= 0.5:  # Minimum threshold
+                    if confidence > best_confidence and confidence >= 0.15:  # Very low threshold for large offsets
                         time_offset = embedded_events[i].start - external_events[j].start
                         best_match = (i, j, confidence, time_offset)
                         best_confidence = confidence
@@ -1026,7 +1026,7 @@ class BilingualMerger:
             return best_match
         else:
             logger.warning("❌ No suitable semantic anchor point found")
-            logger.warning("   Minimum confidence threshold (0.5) not met")
+            logger.warning("   Minimum confidence threshold (0.15) not met")
             return None
 
     def _log_realignment_plan(self, embedded_events: List[SubtitleEvent],
@@ -1378,6 +1378,7 @@ class BilingualMerger:
     def _find_anchor_translation_assisted(self, events1: List[SubtitleEvent], events2: List[SubtitleEvent]) -> Optional[Tuple[int, int, float]]:
         """
         Strategy C: Use translation service to find semantically matching pairs.
+        Enhanced to handle large timing offsets and cross-language content matching.
 
         Returns:
             Tuple of (index1, index2, confidence) or None
@@ -1386,35 +1387,183 @@ class BilingualMerger:
             logger.warning("Translation service not available, falling back to scan strategy")
             return self._find_anchor_scan_forward(events1, events2)
 
-        scan_limit = min(10, len(events1), len(events2))
+        # Expand search scope for large timing offsets
+        scan_limit = min(20, len(events1), len(events2))
 
-        # Extract texts for translation
-        texts1 = [events1[i].text for i in range(scan_limit)]
-        texts2 = [events2[i].text for i in range(scan_limit)]
-
-        logger.info(f"Strategy C (translation): Analyzing {scan_limit} entries from each track")
+        logger.info(f"Strategy C (translation): Enhanced cross-language analysis of {scan_limit} entries from each track")
 
         try:
-            # Use the translation service's alignment method
+            # Phase 1: Try direct translation-assisted alignment
             source_idx, ref_idx, confidence = self.translation_service.find_alignment_point_with_translation(
                 source_events=events1[:scan_limit],
                 reference_events=events2[:scan_limit],
                 target_language='en',  # Assume translating to English for comparison
                 translation_limit=scan_limit,
-                confidence_threshold=self.alignment_threshold
+                confidence_threshold=max(0.6, self.alignment_threshold - 0.1)  # Lower threshold for initial detection
             )
 
             if source_idx is not None and ref_idx is not None and confidence >= self.alignment_threshold:
                 logger.info(f"Strategy C (translation): Found semantic anchor at positions ({source_idx}, {ref_idx}) "
                            f"with confidence {confidence:.3f}")
                 return source_idx, ref_idx, confidence
-            else:
-                logger.info("Strategy C (translation): No suitable semantic matches found, falling back to scan")
-                return self._find_anchor_scan_forward(events1, events2)
+
+            # Phase 2: Enhanced cross-language content matching for large offsets
+            logger.info("Strategy C (translation): Trying enhanced cross-language content matching")
+            anchor_result = self._find_cross_language_anchor_enhanced(events1, events2, scan_limit)
+
+            if anchor_result:
+                return anchor_result
+
+            # Phase 3: Fallback to expanded scan with content similarity
+            logger.info("Strategy C (translation): Falling back to expanded content similarity scan")
+            return self._find_anchor_scan_enhanced(events1, events2)
 
         except Exception as e:
-            logger.warning(f"Translation-assisted anchor finding failed: {e}, falling back to scan")
-            return self._find_anchor_scan_forward(events1, events2)
+            logger.warning(f"Translation-assisted anchor finding failed: {e}, falling back to enhanced scan")
+            return self._find_anchor_scan_enhanced(events1, events2)
+
+    def _find_cross_language_anchor_enhanced(self, events1: List[SubtitleEvent], events2: List[SubtitleEvent], scan_limit: int) -> Optional[Tuple[int, int, float]]:
+        """
+        Enhanced cross-language anchor detection for large timing offsets.
+
+        This method handles scenarios where Chinese and English subtitles have major timing differences
+        by using content similarity and translation to find matching dialogue.
+
+        Args:
+            events1: First list of events (typically Chinese)
+            events2: Second list of events (typically English)
+            scan_limit: Maximum number of events to analyze
+
+        Returns:
+            Tuple of (index1, index2, confidence) or None
+        """
+        logger.info("Enhanced cross-language anchor detection for major timing offsets")
+
+        # Sample events from different positions to handle large offsets
+        sample_positions1 = [0, scan_limit//4, scan_limit//2, 3*scan_limit//4, scan_limit-1]
+        sample_positions2 = [0, scan_limit//4, scan_limit//2, 3*scan_limit//4, scan_limit-1]
+
+        best_match = None
+        best_confidence = 0.0
+
+        for pos1 in sample_positions1:
+            if pos1 >= len(events1):
+                continue
+
+            event1 = events1[pos1]
+
+            # Translate Chinese to English for comparison
+            try:
+                translation_result = self.translation_service.translate_text(
+                    event1.text, target_language='en'
+                )
+
+                if not translation_result:
+                    continue
+
+                translated_text = translation_result.translated_text.lower().strip()
+
+                # Compare with English events
+                for pos2 in sample_positions2:
+                    if pos2 >= len(events2):
+                        continue
+
+                    event2 = events2[pos2]
+                    english_text = event2.text.lower().strip()
+
+                    # Calculate content similarity
+                    similarity = self._calculate_text_similarity(translated_text, english_text)
+
+                    if similarity > best_confidence and similarity >= 0.7:
+                        best_confidence = similarity
+                        best_match = (pos1, pos2, similarity)
+
+                        logger.debug(f"Cross-language match found: pos1={pos1}, pos2={pos2}, similarity={similarity:.3f}")
+                        logger.debug(f"  Chinese: {event1.text[:50]}...")
+                        logger.debug(f"  Translated: {translated_text[:50]}...")
+                        logger.debug(f"  English: {english_text[:50]}...")
+
+            except Exception as e:
+                logger.debug(f"Translation failed for position {pos1}: {e}")
+                continue
+
+        if best_match and best_confidence >= 0.7:
+            pos1, pos2, confidence = best_match
+            logger.info(f"✅ Enhanced cross-language anchor found: ({pos1}, {pos2}) with confidence {confidence:.3f}")
+            return pos1, pos2, confidence
+
+        logger.info("❌ No suitable cross-language anchor found")
+        return None
+
+    def _find_anchor_scan_enhanced(self, events1: List[SubtitleEvent], events2: List[SubtitleEvent]) -> Optional[Tuple[int, int, float]]:
+        """
+        Enhanced scan strategy that handles large timing offsets by expanding search scope.
+
+        Args:
+            events1: First list of events
+            events2: Second list of events
+
+        Returns:
+            Tuple of (index1, index2, confidence) or None
+        """
+        # Expand scan limit for large offset scenarios
+        scan_limit = min(30, len(events1), len(events2))
+        best_match = None
+        best_time_diff = float('inf')
+
+        logger.info(f"Enhanced scan strategy: analyzing {scan_limit} entries with expanded time threshold")
+
+        for i in range(scan_limit):
+            for j in range(scan_limit):
+                time_diff = abs(events1[i].start - events2[j].start)
+
+                # Expanded time threshold for large offsets (up to 60 seconds)
+                if time_diff <= 60.0 and time_diff < best_time_diff:
+                    best_time_diff = time_diff
+                    best_match = (i, j)
+
+        if best_match:
+            # Calculate confidence based on time proximity (adjusted for large offsets)
+            confidence = max(0.3, 1.0 - (best_time_diff / 60.0))
+            logger.info(f"Enhanced scan: Found anchor at positions {best_match} "
+                       f"with time difference {best_time_diff:.3f}s (confidence: {confidence:.3f})")
+            return best_match[0], best_match[1], confidence
+        else:
+            logger.info("Enhanced scan: No suitable anchor points found within ±60.0s")
+            return None
+
+    def _calculate_text_similarity(self, text1: str, text2: str) -> float:
+        """
+        Calculate similarity between two text strings using multiple methods.
+
+        Args:
+            text1: First text string
+            text2: Second text string
+
+        Returns:
+            Similarity score between 0.0 and 1.0
+        """
+        from difflib import SequenceMatcher
+
+        # Clean texts
+        clean1 = ''.join(c.lower() for c in text1 if c.isalnum() or c.isspace()).strip()
+        clean2 = ''.join(c.lower() for c in text2 if c.isalnum() or c.isspace()).strip()
+
+        if not clean1 or not clean2:
+            return 0.0
+
+        # Use sequence matcher for basic similarity
+        similarity = SequenceMatcher(None, clean1, clean2).ratio()
+
+        # Boost similarity for common words
+        words1 = set(clean1.split())
+        words2 = set(clean2.split())
+
+        if words1 and words2:
+            word_overlap = len(words1.intersection(words2)) / len(words1.union(words2))
+            similarity = max(similarity, word_overlap * 0.8)  # Weight word overlap slightly lower
+
+        return similarity
 
     def _find_anchor_manual_selection(self, events1: List[SubtitleEvent], events2: List[SubtitleEvent]) -> Optional[Tuple[int, int, float]]:
         """
