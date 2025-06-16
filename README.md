@@ -1,4 +1,4 @@
-# Bilingual Subtitle Suite
+# Bilingual Subtitle Suite - biss
 
 ![Bilingual Subtitle Suite Logo](images/biss-logo.png)
 
@@ -14,8 +14,11 @@ A sophisticated Python application for processing, aligning, and merging subtitl
 ### 🎬 Advanced Bilingual Subtitle Creation
 - **Intelligent Track Selection**: Automatically identifies main dialogue tracks vs forced/signs tracks
 - **Enhanced Alignment System**: Two-phase alignment with global synchronization and detailed event matching
+- **Large Timing Offset Handling**: Automatically handles timing differences of 50+ seconds between tracks
 - **Translation-Assisted Alignment**: Google Cloud Translation API integration for semantic matching
+- **Cross-Language Content Matching**: Advanced similarity detection for Chinese-English subtitle pairs
 - **Manual Synchronization Interface**: Interactive anchor point selection with millisecond precision
+- **Mixed Track Realignment**: Specialized handling for embedded + external track scenarios
 - **Cross-Language Support**: Chinese, Japanese, Korean, and other languages with English
 
 ### 🔧 Comprehensive Processing Pipeline
@@ -65,8 +68,11 @@ python biss.py
 # Create bilingual subtitles from video file
 python biss.py merge movie.mkv
 
-# Process with enhanced alignment
-python biss.py merge movie.mkv --auto-align --manual-align
+# Process with enhanced alignment for large timing offsets
+python biss.py merge movie.mkv --auto-align --use-translation --alignment-threshold 0.3
+
+# Enable mixed track realignment for embedded + external scenarios
+python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
 
 # Batch process entire directory
 python biss.py batch-merge "Season 01" --auto-confirm
@@ -105,11 +111,14 @@ python biss.py merge movie.mkv
 # Enhanced alignment with manual control
 python biss.py merge movie.mkv --auto-align --manual-align
 
-# Translation-assisted alignment
-python biss.py merge movie.mkv --auto-align --use-translation
+# Translation-assisted alignment for cross-language content
+python biss.py merge movie.mkv --auto-align --use-translation --alignment-threshold 0.3
 
-# Batch processing
-python biss.py batch-merge "Season 01" --auto-confirm
+# Mixed track realignment for major timing offsets
+python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
+
+# Batch processing with enhanced alignment
+python biss.py batch-merge "Season 01" --auto-align --use-translation --auto-confirm
 ```
 
 #### Advanced Features
@@ -117,8 +126,14 @@ python biss.py batch-merge "Season 01" --auto-confirm
 # Manual synchronization interface
 python biss.py merge movie.mkv --manual-align --sync-strategy manual
 
-# High-precision alignment
+# High-precision alignment for well-synchronized tracks
 python biss.py merge movie.mkv --auto-align --alignment-threshold 0.95
+
+# Low-threshold alignment for large timing offsets
+python biss.py merge movie.mkv --auto-align --alignment-threshold 0.3 --use-translation
+
+# Mixed track realignment for embedded + external scenarios
+python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
 
 # PGS conversion integration
 python biss.py merge movie.mkv --force-pgs
@@ -174,8 +189,16 @@ BilingualSubtitleSuite/
 python biss.py merge "Made in Abyss S02E01.mkv"
 # Output: Made in Abyss S02E01.zh-en.srt
 
-# Complex timing issues requiring manual alignment
-python biss.py merge "Made in Abyss S02E02.mkv" --auto-align --manual-align
+# Large timing offset scenario (56+ second difference)
+python biss.py merge "Made in Abyss S02E01.mkv" --auto-align --use-translation --alignment-threshold 0.3
+# Automatically detects and corrects major timing misalignment
+
+# Episode with perfect first-line alignment (80+ second offset)
+python biss.py merge "Made in Abyss S02E02.mkv" --auto-align --enable-mixed-realignment
+# Handles embedded English + external Chinese with major timing differences
+
+# Batch process entire season with enhanced alignment
+python biss.py batch-merge "Season 02" --auto-align --use-translation --alignment-threshold 0.3 --auto-confirm
 ```
 
 ### Movie Processing
@@ -209,7 +232,9 @@ export FFMPEG_TIMEOUT=1800
 ```
 
 ### CLI Configuration
-- **Alignment Threshold**: `--alignment-threshold 0.8` (0.0-1.0)
+- **Alignment Threshold**: `--alignment-threshold 0.8` (0.0-1.0, use 0.3 for large offsets)
+- **Mixed Track Realignment**: `--enable-mixed-realignment` (for embedded + external scenarios)
+- **Translation Assistance**: `--use-translation` (enables cross-language content matching)
 - **Time Matching Window**: `--time-threshold 0.5` (seconds)
 - **Translation Limit**: `--translation-limit 10` (API calls per alignment)
 - **Sync Strategy**: `--sync-strategy auto|first-line|scan|translation|manual`

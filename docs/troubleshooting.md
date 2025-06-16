@@ -236,6 +236,52 @@ python biss.py merge movie.mkv --list-tracks --debug
 python biss.py merge movie.mkv --auto-align --sync-strategy translation --use-translation
 ```
 
+### Issue: Major Timing Offsets (50+ Seconds)
+
+**Symptoms**:
+```
+Chinese and English subtitles appear at completely different times
+Timing differences of 50+ seconds between tracks
+Semantic alignment anchor finding fails
+```
+
+**Real-World Example**: Made in Abyss episodes where external Chinese subtitles (.zh.srt) have major timing differences from embedded English tracks.
+
+**Enhanced Solutions**:
+```bash
+# Enable enhanced mixed track realignment
+python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
+
+# Use low confidence threshold for large offsets
+python biss.py merge movie.mkv --auto-align --use-translation --alignment-threshold 0.3
+
+# Combined approach for maximum success rate
+python biss.py merge movie.mkv --auto-align --use-translation \
+  --alignment-threshold 0.3 --enable-mixed-realignment
+
+# Debug the alignment process
+python biss.py --debug merge movie.mkv --auto-align --use-translation \
+  --alignment-threshold 0.3 --enable-mixed-realignment
+```
+
+**What This Does**:
+- **Mixed Track Realignment**: Detects embedded vs external track scenarios
+- **Low Confidence Threshold**: Accepts weaker matches for initial anchor detection
+- **Translation-Assisted Matching**: Uses Google Translate for cross-language content similarity
+- **Pre-Anchor Deletion**: Removes mistimed content before the anchor point
+- **Global Time Shift**: Applies calculated offset to align entire external track
+
+**Expected Results**:
+```
+✅ Found semantic anchor point: embedded[4] ↔ external[3]
+   Embedded: This compass... (11.730s)
+   External: 在這個羅盤... (68.497s)
+   Confidence: 0.45, Time offset: -56.767s
+🔧 Applying global time shift: -56.767s to external track
+🗑️ Pre-anchor deletion: 3 entries removed from external track
+✅ Successfully created aligned bilingual subtitles
+```
+
 ### Issue: Poor Alignment Quality
 
 **Symptoms**:
