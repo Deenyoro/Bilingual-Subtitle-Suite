@@ -413,12 +413,13 @@ class GoogleTranslationService:
                                             target_language: str = 'en', source_language: str = None,
                                             translation_limit: int = 10, confidence_threshold: float = 0.7) -> tuple:
         """
-        Find optimal alignment point using limited translation approach for efficiency
+        Find optimal alignment point using enhanced translation approach for large timing offsets.
 
-        This method implements the optimized alignment strategy:
-        1. Translate only the first N source events (default: 10)
-        2. Find the best similarity match against all reference events
-        3. Return the alignment point with confidence score
+        This method implements an enhanced alignment strategy:
+        1. Try standard limited translation approach first
+        2. If no match found, use expanded cross-language sampling
+        3. Handle large timing offsets by sampling from different positions
+        4. Return the best alignment point with confidence score
 
         Args:
             source_events: Source subtitle events to align
@@ -436,7 +437,31 @@ class GoogleTranslationService:
         if not source_events or not reference_events:
             return None, None, 0.0
 
-        logger.info(f"Finding alignment point using limited translation approach")
+        logger.info(f"Finding alignment point using enhanced translation approach")
+
+        # Phase 1: Try standard limited translation approach
+        result = self._find_alignment_standard(source_events, reference_events, target_language,
+                                             source_language, translation_limit, confidence_threshold)
+        if result[0] is not None:
+            return result
+
+        # Phase 2: Enhanced cross-language sampling for large offsets
+        logger.info("Standard approach failed, trying enhanced cross-language sampling")
+        result = self._find_alignment_cross_language_sampling(source_events, reference_events,
+                                                            target_language, source_language, confidence_threshold)
+        if result[0] is not None:
+            return result
+
+        # Phase 3: Return best effort result
+        logger.warning(f"❌ No reliable alignment point found with enhanced approach")
+        return None, None, 0.0
+
+    def _find_alignment_standard(self, source_events: List, reference_events: List,
+                               target_language: str, source_language: str,
+                               translation_limit: int, confidence_threshold: float) -> tuple:
+        """Standard alignment approach - translate first N events."""
+        from core.similarity_alignment import SimilarityAligner
+
         logger.info(f"Translating first {translation_limit} source events for alignment detection")
 
         # Step 1: Translate only the first few source events for efficiency
@@ -489,8 +514,105 @@ class GoogleTranslationService:
                        f"(confidence: {best_confidence:.3f})")
             return best_source_idx, best_ref_idx, best_confidence
         else:
-            logger.warning(f"❌ No reliable alignment point found. Best confidence: {best_confidence:.3f} "
-                          f"(threshold: {confidence_threshold})")
+            logger.debug(f"Standard approach: Best confidence {best_confidence:.3f} below threshold {confidence_threshold}")
+            return None, None, best_confidence
+
+    def _find_alignment_cross_language_sampling(self, source_events: List, reference_events: List,
+                                               target_language: str, source_language: str,
+                                               confidence_threshold: float) -> tuple:
+        """
+        Enhanced cross-language sampling for large timing offsets.
+
+        This method samples events from different positions in both tracks to handle
+        scenarios where matching content appears at very different timing positions.
+        """
+        from core.similarity_alignment import SimilarityAligner
+
+        # Sample positions from both tracks to handle large offsets
+        max_samples = 15  # Increased sample size for better coverage
+        source_len = len(source_events)
+        ref_len = len(reference_events)
+
+        # Create sample positions - spread across the entire track
+        source_positions = []
+        ref_positions = []
+
+        if source_len <= max_samples:
+            source_positions = list(range(source_len))
+        else:
+            # Sample from beginning, middle, and end sections
+            step = source_len // max_samples
+            source_positions = [i * step for i in range(max_samples)]
+            # Ensure we don't exceed bounds
+            source_positions = [min(pos, source_len - 1) for pos in source_positions]
+
+        if ref_len <= max_samples:
+            ref_positions = list(range(ref_len))
+        else:
+            step = ref_len // max_samples
+            ref_positions = [i * step for i in range(max_samples)]
+            ref_positions = [min(pos, ref_len - 1) for pos in ref_positions]
+
+        logger.info(f"Cross-language sampling: {len(source_positions)} source positions, {len(ref_positions)} reference positions")
+
+        # Extract sample events for translation
+        sample_source_events = [source_events[pos] for pos in source_positions]
+
+        # Translate sample source events
+        translation_results = self.translate_subtitle_events(
+            sample_source_events,
+            target_language=target_language,
+            source_language=source_language,
+            limit=len(sample_source_events)
+        )
+
+        if not translation_results:
+            logger.warning("Cross-language sampling: No translation results obtained")
+            return None, None, 0.0
+
+        # Create similarity aligner
+        aligner = SimilarityAligner()
+
+        best_source_idx = None
+        best_ref_idx = None
+        best_confidence = 0.0
+
+        logger.debug(f"Cross-language analysis: {len(translation_results)} translated samples vs {len(ref_positions)} reference samples")
+
+        # Compare each translated sample against all reference samples
+        for i, translation_result in enumerate(translation_results):
+            if not translation_result.translated_text.strip():
+                continue
+
+            translated_text = translation_result.translated_text
+            actual_source_idx = source_positions[i]
+
+            for ref_pos in ref_positions:
+                ref_event = reference_events[ref_pos]
+                if not ref_event.text.strip():
+                    continue
+
+                # Calculate similarity
+                similarity = aligner.calculate_similarity(translated_text, ref_event.text)
+
+                if similarity > best_confidence:
+                    best_confidence = similarity
+                    best_source_idx = actual_source_idx
+                    best_ref_idx = ref_pos
+
+                    logger.debug(f"Cross-language match: src[{actual_source_idx}] -> ref[{ref_pos}] "
+                               f"(confidence: {similarity:.3f})")
+                    logger.debug(f"  Source: {source_events[actual_source_idx].text[:50]}...")
+                    logger.debug(f"  Translated: {translated_text[:50]}...")
+                    logger.debug(f"  Reference: {ref_event.text[:50]}...")
+
+        # Check if we found a good match
+        if best_confidence >= confidence_threshold:
+            logger.info(f"✅ Cross-language sampling found alignment: source[{best_source_idx}] -> reference[{best_ref_idx}] "
+                       f"(confidence: {best_confidence:.3f})")
+            return best_source_idx, best_ref_idx, best_confidence
+        else:
+            logger.info(f"Cross-language sampling: Best confidence {best_confidence:.3f} below threshold {confidence_threshold}")
             return None, None, best_confidence
 
 
