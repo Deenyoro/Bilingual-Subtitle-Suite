@@ -94,15 +94,25 @@ class EncodingDetector:
     @staticmethod
     def _manual_detect_encoding(file_path: Path) -> Optional[str]:
         """
-        Manually detect encoding by trying different encodings.
-        
+        Manually detect encoding by trying different encodings with BOM priority.
+
         Args:
             file_path: Path to the file
-            
+
         Returns:
             Detected encoding or None
         """
-        # Try UTF-8 variants first
+        # CRITICAL FIX: Check for BOM first and prioritize utf-8-sig
+        if EncodingDetector.has_bom(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8-sig') as f:
+                    f.read()
+                logger.debug(f"Manual detection successful for {file_path.name}: utf-8-sig (BOM detected)")
+                return 'utf-8-sig'
+            except UnicodeDecodeError:
+                logger.warning(f"BOM detected but utf-8-sig failed for {file_path.name}")
+
+        # Try UTF-8 variants
         utf_encodings = ['utf-8', 'utf-8-sig']
         for encoding in utf_encodings:
             try:
@@ -174,23 +184,34 @@ class EncodingDetector:
     @staticmethod
     def read_file_with_encoding(file_path: Path) -> Tuple[str, str]:
         """
-        Read a file with automatic encoding detection.
-        
+        Read a file with automatic encoding detection and proper BOM handling.
+
         Args:
             file_path: Path to the file to read
-            
+
         Returns:
             Tuple of (file_content, encoding_used)
-            
+
         Raises:
             IOError: If file cannot be read with any encoding
-            
+
         Example:
             >>> content, encoding = EncodingDetector.read_file_with_encoding(Path("subtitle.srt"))
             >>> print(f"Read file with {encoding} encoding")
         """
+        # CRITICAL FIX: Check for UTF-8 BOM first to prevent parsing issues
+        if EncodingDetector.has_bom(file_path):
+            logger.debug(f"UTF-8 BOM detected in {file_path.name}, using utf-8-sig encoding")
+            try:
+                with open(file_path, 'r', encoding='utf-8-sig') as f:
+                    content = f.read()
+                return content, 'utf-8-sig'
+            except Exception as e:
+                logger.warning(f"Failed to read BOM file with utf-8-sig: {e}, falling back to detection")
+
+        # Standard encoding detection for files without BOM
         encoding = EncodingDetector.detect_encoding(file_path)
-        
+
         if not encoding:
             # Last resort - try with errors='replace'
             encoding = 'utf-8'
@@ -201,7 +222,7 @@ class EncodingDetector:
                 return content, encoding
             except Exception as e:
                 raise IOError(f"Cannot read file {file_path}: {e}")
-        
+
         try:
             with open(file_path, 'r', encoding=encoding) as f:
                 content = f.read()

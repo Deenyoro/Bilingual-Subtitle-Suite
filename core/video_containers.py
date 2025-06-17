@@ -279,13 +279,14 @@ class VideoContainerHandler:
 
             tmp_path = Path(tmp_dir) / f"subtitle{copy_ext}"
 
+            # CRITICAL: Do NOT use -avoid_negative_ts make_zero as it shifts timing to start from 0
+            # This would break video synchronization for embedded subtitles
             cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
                 "-fflags", "+genpts",
                 "-i", str(video_path),
                 "-map", track.ffmpeg_index,
                 "-c:s", "copy",
-                "-avoid_negative_ts", "make_zero",
                 str(tmp_path)
             ]
 
