@@ -411,7 +411,7 @@ class GoogleTranslationService:
 
     def find_alignment_point_with_translation(self, source_events: List, reference_events: List,
                                             target_language: str = 'en', source_language: str = None,
-                                            translation_limit: int = 10, confidence_threshold: float = 0.7) -> tuple:
+                                            translation_limit: int = 20, confidence_threshold: float = 0.5) -> tuple:
         """
         Find optimal alignment point using enhanced translation approach for large timing offsets.
 
@@ -426,8 +426,8 @@ class GoogleTranslationService:
             reference_events: Reference subtitle events
             target_language: Target language for translation
             source_language: Source language (auto-detect if None)
-            translation_limit: Number of source events to translate (default: 10)
-            confidence_threshold: Minimum confidence for alignment point (default: 0.7)
+            translation_limit: Number of source events to translate (default: 20)
+            confidence_threshold: Minimum confidence for alignment point (default: 0.5)
 
         Returns:
             Tuple of (source_index, reference_index, confidence) or (None, None, 0.0) if no good match
@@ -490,6 +490,7 @@ class GoogleTranslationService:
         logger.debug(f"Analyzing {len(translated_texts)} translated texts against {len(reference_texts)} reference texts")
 
         # Try each translated source event against all reference events
+        # Prioritize early matches by adding position bonus
         for src_idx, translated_text in enumerate(translated_texts):
             if not translated_text.strip():
                 continue
@@ -501,12 +502,20 @@ class GoogleTranslationService:
                 # Calculate similarity between translated source and reference
                 similarity = aligner.calculate_similarity(translated_text, ref_text)
 
-                if similarity > best_confidence:
-                    best_confidence = similarity
+                # Add position bonus to prioritize early matches (first dialogue pairs)
+                # Early matches get up to 0.1 bonus, decreasing with position
+                position_bonus = max(0, 0.1 - (src_idx + ref_idx) * 0.005)
+                adjusted_similarity = similarity + position_bonus
+
+                if adjusted_similarity > best_confidence:
+                    best_confidence = adjusted_similarity
                     best_source_idx = src_idx
                     best_ref_idx = ref_idx
                     logger.debug(f"New best match: src[{src_idx}] -> ref[{ref_idx}] "
-                               f"(confidence: {similarity:.3f})")
+                               f"(similarity: {similarity:.3f}, bonus: {position_bonus:.3f}, total: {adjusted_similarity:.3f})")
+                    logger.debug(f"  Source: '{source_events[src_idx].text}'")
+                    logger.debug(f"  Translated: '{translated_text}'")
+                    logger.debug(f"  Reference: '{ref_text}'")
 
         # Step 4: Check if confidence meets threshold
         if best_confidence >= confidence_threshold:
