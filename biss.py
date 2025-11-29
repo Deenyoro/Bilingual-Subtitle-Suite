@@ -17,23 +17,24 @@ This application consolidates the functionality of multiple subtitle processing
 tools into a single, unified interface with both command-line and interactive modes.
 
 Usage:
-    # Interactive mode (default)
-    python biss.py
+    # GUI mode (graphical interface)
+    python biss.py gui
+
+    # Interactive mode (text menu)
     python biss.py interactive
-    
+
     # Command-line mode
     python biss.py merge movie.mkv --output bilingual.srt
-    python biss.py convert subtitle.srt --encoding utf-8
-    python biss.py realign source.srt reference.srt
-    python biss.py batch-convert /media/movies --recursive
-    
+    python biss.py merge chinese.srt english.srt
+    python biss.py shift subtitle.srt --offset="-2.5s"
+    python biss.py convert subtitle.srt
+
     # Help
     python biss.py --help
     python biss.py <command> --help
 
 Author: Bilingual Subtitle Suite Team
 Version: 2.0.0
-License: MIT
 """
 
 import sys
@@ -111,18 +112,23 @@ def main():
     Main application entry point.
 
     Handles argument parsing and dispatches to appropriate interface
-    (interactive or command-line) based on the provided arguments.
+    (GUI, interactive, or command-line) based on the provided arguments.
     """
-    # If no arguments provided, launch interactive mode
+    # If no arguments provided, launch GUI mode
     if len(sys.argv) == 1:
-        launch_interactive_mode()
+        launch_gui_mode()
         return
 
     # Check for global flags first
     debug_mode = '--debug' in sys.argv
     verbose_mode = '--verbose' in sys.argv or '-v' in sys.argv
 
-    # Check if user wants interactive mode explicitly
+    # Check if user wants GUI mode
+    if len(sys.argv) >= 2 and sys.argv[1] == 'gui':
+        launch_gui_mode()
+        return
+
+    # Check if user wants interactive mode (text-based menu)
     if len(sys.argv) >= 2 and sys.argv[1] == 'interactive':
         no_colors = '--no-colors' in sys.argv
         launch_interactive_mode(use_colors=not no_colors)
@@ -148,10 +154,28 @@ def main():
         sys.exit(1)
 
 
+def launch_gui_mode():
+    """
+    Launch the graphical user interface.
+    """
+    try:
+        from ui.gui import BISSGui
+        app = BISSGui()
+        app.run()
+    except ImportError as e:
+        print(f"GUI dependencies not available: {e}", file=sys.stderr)
+        print("Falling back to interactive mode...", file=sys.stderr)
+        launch_interactive_mode()
+    except Exception as e:
+        print(f"Error launching GUI: {e}", file=sys.stderr)
+        print("Falling back to interactive mode...", file=sys.stderr)
+        launch_interactive_mode()
+
+
 def launch_interactive_mode(use_colors: bool = True):
     """
     Launch the interactive menu-driven interface.
-    
+
     Args:
         use_colors: Whether to use colored output
     """

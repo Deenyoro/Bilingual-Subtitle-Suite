@@ -65,30 +65,50 @@ class CLIHandler:
         """
         parser = argparse.ArgumentParser(
             prog='biss',
-            description=APP_DESCRIPTION,
+            description=f'''{APP_DESCRIPTION}
+
+Bilingual Subtitle Suite - Create bilingual subtitles easily.
+Combines Chinese/Japanese/Korean subtitles with English subtitles.''',
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
-Examples:
-  # Merge bilingual subtitles
-  biss merge movie.mkv --output bilingual.srt
+QUICK START - Common Use Cases:
+================================
 
-  # Convert subtitle encoding
-  biss convert subtitle.srt --encoding utf-8
+1. MERGE FROM VIDEO (extracts embedded subtitles):
+   biss merge movie.mkv
 
-  # Realign subtitles
-  biss realign source.srt reference.srt
+2. MERGE TWO SUBTITLE FILES (auto-detects languages):
+   biss merge chinese.srt english.srt
 
-  # Batch convert directory
-  biss batch-convert /media/movies --recursive
+3. MERGE WITH EXPLICIT FILES:
+   biss merge --chinese sub_chi.srt --english sub_eng.srt
 
-  # Interactive mode
-  biss interactive
+4. SHIFT TIMING (fix sync issues):
+   biss shift subtitle.srt --offset="-2.5s"     # Shift back 2.5 seconds
+   biss shift subtitle.srt --offset 1500ms      # Shift forward 1.5 seconds
+
+5. CONVERT ENCODING (fix garbled characters):
+   biss convert subtitle.srt
+
+6. INTERACTIVE MODE (menu-driven):
+   biss interactive
+
+ADVANCED OPTIONS:
+=================
+--auto-align          Smart alignment for mismatched timing
+--use-translation     Use Google Translate for cross-language matching
+--debug               Show detailed processing information
+
+For detailed help on any command:
+  biss <command> --help
             """
         )
         
         parser.add_argument('--version', action='version', version=f'{APP_NAME} {APP_VERSION}')
         parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
         parser.add_argument('-d', '--debug', action='store_true', help='Enable debug output')
+        parser.add_argument('--dry-run', action='store_true',
+                          help='Show what would be done without making changes')
         
         # Create subparsers for different operations
         subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -101,7 +121,10 @@ Examples:
         
         # Realign command
         self._add_realign_parser(subparsers)
-        
+
+        # Timing adjustment command
+        self._add_timing_adjust_parser(subparsers)
+
         # Batch commands
         self._add_batch_parsers(subparsers)
 
@@ -118,12 +141,42 @@ Examples:
         merge_parser = subparsers.add_parser(
             'merge',
             help='Merge bilingual subtitles (Chinese-English, Japanese-English, etc.)',
-            description='Merge subtitle files or extract from video containers'
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description='''Merge subtitle files or extract from video containers.
+
+SIMPLE USAGE (recommended):
+  # From video - auto-extracts embedded subtitles
+  biss merge movie.mkv
+
+  # Two subtitle files - auto-detects languages
+  biss merge chinese.srt english.srt
+
+  # One subtitle + video - finds the other language automatically
+  biss merge chinese.srt --video movie.mkv
+
+EXPLICIT LANGUAGE FLAGS (when auto-detection fails):
+  biss merge --chinese chinese.srt --english english.srt
+
+The tool auto-detects subtitle languages from:
+  1. Filename patterns (.zh.srt, .en.srt, .chi., .eng., etc.)
+  2. Content analysis (Chinese characters vs English text)
+'''
         )
-        
-        merge_parser.add_argument('input', type=Path, help='Video file or subtitle file')
-        merge_parser.add_argument('-c', '--chinese', type=Path, help='Foreign language subtitle file (Chinese, Japanese, Korean, etc.)')
-        merge_parser.add_argument('-e', '--english', type=Path, help='English subtitle file')
+
+        # Primary input - can be video OR subtitle file
+        merge_parser.add_argument('input', type=Path, nargs='?', default=None,
+                                help='Video file, or first subtitle file (language auto-detected)')
+        # Second positional argument for easy two-file merging
+        merge_parser.add_argument('input2', type=Path, nargs='?', default=None,
+                                help='Second subtitle file (language auto-detected)')
+
+        # Explicit language specification (optional - for when auto-detection fails)
+        merge_parser.add_argument('-c', '--chinese', type=Path,
+                                help='Explicitly specify foreign language subtitle (Chinese/Japanese/Korean)')
+        merge_parser.add_argument('-e', '--english', type=Path,
+                                help='Explicitly specify English subtitle file')
+        merge_parser.add_argument('--video', type=Path,
+                                help='Video file to extract missing subtitles from')
         merge_parser.add_argument('-o', '--output', type=Path, help='Output file path')
         merge_parser.add_argument('-f', '--format', choices=['srt', 'ass'], default='srt',
                                 help='Output format (default: srt)')
@@ -215,7 +268,27 @@ Examples:
         realign_parser.add_argument('--sync-strategy', type=str, default='auto',
                                   choices=['auto', 'first-line', 'scan', 'translation', 'manual'],
                                   help='Global synchronization strategy (default: auto)')
-    
+
+    def _add_timing_adjust_parser(self, subparsers):
+        """Add timing adjustment command parser."""
+        timing_parser = subparsers.add_parser(
+            'shift',
+            help='Adjust subtitle timing',
+            description='Shift subtitle timing by offset or set first line to specific timestamp'
+        )
+
+        timing_parser.add_argument('input', type=Path, help='Subtitle file to adjust')
+        timing_parser.add_argument('-o', '--output', type=Path, help='Output file path (default: overwrite input)')
+        timing_parser.add_argument('-b', '--backup', action='store_true',
+                                 help='Create backup of original file')
+
+        # Mutually exclusive group for adjustment methods
+        adjust_group = timing_parser.add_mutually_exclusive_group(required=True)
+        adjust_group.add_argument('--offset', type=str,
+                                help='Time offset (e.g., "2.5s", "-1500ms", "00:00:02,500")')
+        adjust_group.add_argument('--first-line-at', type=str,
+                                help='Set first subtitle to start at this timestamp (e.g., "00:00:50,983")')
+
     def _add_batch_parsers(self, subparsers):
         """Add batch processing command parsers."""
         # Batch convert
@@ -391,12 +464,19 @@ Examples:
         """Add interactive command parser."""
         interactive_parser = subparsers.add_parser(
             'interactive',
-            help='Launch interactive mode',
-            description='Launch interactive menu-driven interface'
+            help='Launch interactive text mode',
+            description='Launch interactive menu-driven interface (text-based)'
         )
-        
+
         interactive_parser.add_argument('--no-colors', action='store_true',
                                       help='Disable colored output')
+
+        # GUI command
+        gui_parser = subparsers.add_parser(
+            'gui',
+            help='Launch graphical interface',
+            description='Launch the graphical user interface (GUI)'
+        )
     
     def handle_command(self, args) -> int:
         """
@@ -422,6 +502,8 @@ Examples:
                 return self._handle_convert(args)
             elif args.command == 'realign':
                 return self._handle_realign(args)
+            elif args.command == 'shift':
+                return self._handle_timing_adjust(args)
             elif args.command == 'batch-convert':
                 return self._handle_batch_convert(args)
             elif args.command == 'batch-merge':
@@ -440,6 +522,8 @@ Examples:
                 return self._handle_setup_pgsrip(args)
             elif args.command == 'interactive':
                 return self._handle_interactive(args)
+            elif args.command == 'gui':
+                return self._handle_gui(args)
             else:
                 logger.error(f"Unknown command: {args.command}")
                 return 1
@@ -455,73 +539,201 @@ Examples:
             return 1
 
     def _handle_merge(self, args) -> int:
-        """Handle merge command."""
-        if not args.input.exists():
-            logger.error(f"Input file not found: {args.input}")
+        """Handle merge command with smart language auto-detection."""
+        from core.video_containers import VideoContainerHandler
+        from core.language_detection import LanguageDetector
+
+        # Resolve input files with smart language detection
+        chinese_path, english_path, video_path = self._resolve_merge_inputs(args)
+
+        # Validate we have something to work with
+        if not chinese_path and not english_path and not video_path:
+            logger.error("No input files specified. Use: biss merge <file1> [file2]")
+            print("\nUsage examples:")
+            print("  biss merge movie.mkv                    # Extract from video")
+            print("  biss merge chinese.srt english.srt      # Merge two subtitle files")
+            print("  biss merge subtitle.srt --video movie.mkv")
             return 1
 
-        # Handle track listing
-        if args.list_tracks:
-            return self._list_video_tracks(args.input)
+        # Handle track listing (requires video)
+        if getattr(args, 'list_tracks', False):
+            if video_path:
+                return self._list_video_tracks(video_path)
+            elif args.input and VideoContainerHandler.is_video_container(args.input):
+                return self._list_video_tracks(args.input)
+            else:
+                logger.error("--list-tracks requires a video file")
+                return 1
 
-        # Create merger with enhanced alignment options if specified
-        if hasattr(args, 'auto_align') and (args.auto_align or args.use_translation or args.manual_align):
+        # Dry-run mode: show what would happen without executing
+        if getattr(args, 'dry_run', False):
+            print("\n[DRY RUN] Would perform the following merge operation:")
+            if video_path:
+                print(f"  Mode: Extract from video")
+                print(f"  Video: {video_path}")
+            else:
+                print(f"  Mode: Merge subtitle files")
+            if chinese_path:
+                print(f"  Foreign language: {chinese_path}")
+            if english_path:
+                print(f"  English: {english_path}")
+            output = args.output or "(auto-generated)"
+            print(f"  Output format: {args.format}")
+            print(f"  Output file: {output}")
+            print(f"  Auto-align: {getattr(args, 'auto_align', False)}")
+            print(f"  Use translation: {getattr(args, 'use_translation', False)}")
+            print("\n[DRY RUN] No changes made.")
+            return 0
+
+        # Create merger with appropriate options
+        merger = self._create_merger(args)
+
+        # Determine processing mode
+        if video_path:
+            # Process video file (extract embedded + use provided external)
+            logger.info(f"Processing video: {video_path.name}")
+            success = merger.process_video(
+                video_path=video_path,
+                chinese_sub=chinese_path,
+                english_sub=english_path,
+                output_format=args.format,
+                output_path=args.output,
+                chinese_track=getattr(args, 'chinese_track', None),
+                english_track=getattr(args, 'english_track', None),
+                remap_chinese=getattr(args, 'remap_chinese', None),
+                remap_english=getattr(args, 'remap_english', None),
+                prefer_external=getattr(args, 'prefer_external', False),
+                prefer_embedded=getattr(args, 'prefer_embedded', False)
+            )
+        else:
+            # Merge subtitle files directly
+            if not chinese_path and not english_path:
+                logger.error("Need at least one subtitle file to merge")
+                return 1
+
+            logger.info(f"Merging subtitle files")
+            if chinese_path:
+                logger.info(f"  Foreign language: {chinese_path.name}")
+            if english_path:
+                logger.info(f"  English: {english_path.name}")
+
+            success = merger.merge_subtitle_files(
+                chinese_path=chinese_path,
+                english_path=english_path,
+                output_path=args.output,
+                output_format=args.format
+            )
+
+        return 0 if success else 1
+
+    def _resolve_merge_inputs(self, args):
+        """
+        Resolve merge inputs with smart language auto-detection.
+
+        Handles multiple input patterns:
+        1. biss merge movie.mkv                    -> video processing
+        2. biss merge chinese.srt english.srt     -> two subtitle files
+        3. biss merge subtitle.srt --video movie.mkv -> subtitle + video
+        4. biss merge --chinese x.srt --english y.srt -> explicit flags
+
+        Returns:
+            Tuple of (chinese_path, english_path, video_path)
+        """
+        from core.video_containers import VideoContainerHandler
+        from core.language_detection import LanguageDetector
+
+        chinese_path = getattr(args, 'chinese', None)
+        english_path = getattr(args, 'english', None)
+        video_path = getattr(args, 'video', None)
+
+        # Collect all input files for auto-detection
+        input_files = []
+        if args.input and args.input.exists():
+            input_files.append(args.input)
+        if getattr(args, 'input2', None) and args.input2.exists():
+            input_files.append(args.input2)
+
+        # Process each input file
+        for input_file in input_files:
+            if VideoContainerHandler.is_video_container(input_file):
+                # It's a video file
+                if not video_path:
+                    video_path = input_file
+                    logger.info(f"Detected video file: {input_file.name}")
+            else:
+                # It's a subtitle file - auto-detect language
+                detected_lang = self._detect_subtitle_language(input_file)
+                logger.info(f"Detected '{detected_lang}' language for: {input_file.name}")
+
+                if detected_lang in ['zh', 'ja', 'ko', 'chinese', 'japanese', 'korean']:
+                    if not chinese_path:
+                        chinese_path = input_file
+                        logger.info(f"  -> Using as foreign language subtitle")
+                    elif not english_path:
+                        # Might be mislabeled, use as English
+                        english_path = input_file
+                        logger.warning(f"  -> Already have foreign sub, using as English")
+                elif detected_lang in ['en', 'english']:
+                    if not english_path:
+                        english_path = input_file
+                        logger.info(f"  -> Using as English subtitle")
+                    elif not chinese_path:
+                        chinese_path = input_file
+                        logger.warning(f"  -> Already have English, using as foreign")
+                else:
+                    # Unknown language - assign to first empty slot
+                    if not chinese_path:
+                        chinese_path = input_file
+                        logger.info(f"  -> Unknown language, using as foreign subtitle")
+                    elif not english_path:
+                        english_path = input_file
+                        logger.info(f"  -> Unknown language, using as English subtitle")
+
+        return chinese_path, english_path, video_path
+
+    def _detect_subtitle_language(self, file_path: Path) -> str:
+        """Detect subtitle file language from filename and content."""
+        from core.language_detection import LanguageDetector
+
+        # Try filename first (fast)
+        lang = LanguageDetector.detect_language_from_filename(str(file_path.name))
+        if lang != 'unknown':
+            return lang
+
+        # Fall back to content analysis (slower but more accurate)
+        return LanguageDetector.detect_subtitle_language(file_path)
+
+    def _create_merger(self, args):
+        """Create BilingualMerger with appropriate options."""
+        # Check if enhanced alignment is requested
+        use_enhanced = (
+            getattr(args, 'auto_align', False) or
+            getattr(args, 'use_translation', False) or
+            getattr(args, 'manual_align', False)
+        )
+
+        if use_enhanced:
             merger = BilingualMerger(
-                auto_align=args.auto_align,
-                use_translation=args.use_translation,
-                alignment_threshold=args.alignment_threshold,
-                translation_api_key=args.translation_api_key,
-                manual_align=args.manual_align,
-                sync_strategy=args.sync_strategy,
-                reference_language_preference=args.reference_language,
+                auto_align=getattr(args, 'auto_align', False),
+                use_translation=getattr(args, 'use_translation', False),
+                alignment_threshold=getattr(args, 'alignment_threshold', 0.8),
+                translation_api_key=getattr(args, 'translation_api_key', None),
+                manual_align=getattr(args, 'manual_align', False),
+                sync_strategy=getattr(args, 'sync_strategy', 'auto'),
+                reference_language_preference=getattr(args, 'reference_language', 'auto'),
                 force_pgs=getattr(args, 'force_pgs', False),
                 no_pgs=getattr(args, 'no_pgs', False),
                 enable_mixed_realignment=getattr(args, 'enable_mixed_realignment', False)
             )
-            logger.info(f"Using enhanced alignment: auto_align={args.auto_align}, "
-                       f"use_translation={args.use_translation}, manual_align={args.manual_align}, "
-                       f"sync_strategy={args.sync_strategy}, threshold={args.alignment_threshold}")
+            logger.info(f"Enhanced alignment enabled: auto_align={args.auto_align}, "
+                       f"use_translation={getattr(args, 'use_translation', False)}")
         else:
-            # Create merger with PGS flags even for basic usage
             merger = BilingualMerger(
                 force_pgs=getattr(args, 'force_pgs', False),
                 no_pgs=getattr(args, 'no_pgs', False)
             )
 
-        # Check if input is video or subtitle
-        from core.video_containers import VideoContainerHandler
-
-        if VideoContainerHandler.is_video_container(args.input):
-            # Process video file
-            success = merger.process_video(
-                video_path=args.input,
-                chinese_sub=args.chinese,
-                english_sub=args.english,
-                output_format=args.format,
-                output_path=args.output,
-                chinese_track=args.chinese_track,
-                english_track=args.english_track,
-                remap_chinese=args.remap_chinese,
-                remap_english=args.remap_english,
-                prefer_external=args.prefer_external,
-                prefer_embedded=args.prefer_embedded
-            )
-        else:
-            # Process subtitle files directly
-            if not args.chinese and not args.english:
-                logger.error("For subtitle input, specify --chinese and/or --english files")
-                return 1
-
-            # Let the merger determine the appropriate filename based on detected languages
-            output_path = args.output  # None if not specified, merger will handle dynamic naming
-            success = merger.merge_subtitle_files(
-                chinese_path=args.chinese,
-                english_path=args.english,
-                output_path=output_path,
-                output_format=args.format
-            )
-
-        return 0 if success else 1
+        return merger
 
     def _handle_convert(self, args) -> int:
         """Handle convert command."""
@@ -576,6 +788,54 @@ Examples:
         )
 
         return 0 if success else 1
+
+    def _handle_timing_adjust(self, args) -> int:
+        """Handle timing adjustment command."""
+        if not args.input.exists():
+            logger.error(f"Input file not found: {args.input}")
+            return 1
+
+        from processors.timing_adjuster import TimingAdjuster
+
+        # Create timing adjuster with backup option
+        adjuster = TimingAdjuster(create_backup=args.backup)
+
+        try:
+            # Dry-run mode: show what would happen
+            if getattr(args, 'dry_run', False):
+                print("\n[DRY RUN] Would perform the following timing adjustment:")
+                print(f"  Input file: {args.input}")
+                if args.offset:
+                    offset_ms = adjuster.parse_offset_string(args.offset)
+                    direction = "earlier" if offset_ms < 0 else "later"
+                    print(f"  Operation: Shift all subtitles {abs(offset_ms)}ms {direction}")
+                elif args.first_line_at:
+                    print(f"  Operation: Set first subtitle to start at {args.first_line_at}")
+                output = args.output or args.input
+                print(f"  Output file: {output}")
+                print(f"  Create backup: {args.backup}")
+                print("\n[DRY RUN] No changes made.")
+                return 0
+
+            if args.offset:
+                # Parse offset and apply adjustment
+                offset_ms = adjuster.parse_offset_string(args.offset)
+                success = adjuster.adjust_by_offset(args.input, offset_ms, args.output)
+            elif args.first_line_at:
+                # Adjust first line to target timestamp
+                success = adjuster.adjust_first_line_to(args.input, args.first_line_at, args.output)
+            else:
+                logger.error("Either --offset or --first-line-at must be specified")
+                return 1
+
+            return 0 if success else 1
+
+        except ValueError as e:
+            logger.error(f"Invalid input: {e}")
+            return 1
+        except Exception as e:
+            logger.error(f"Timing adjustment failed: {e}")
+            return 1
 
     def _handle_batch_convert(self, args) -> int:
         """Handle batch-convert command."""
@@ -907,6 +1167,14 @@ Examples:
 
         interface = InteractiveInterface(use_colors=not args.no_colors)
         return interface.run()
+
+    def _handle_gui(self, args) -> int:
+        """Handle GUI command."""
+        from .gui import BISSGui
+
+        app = BISSGui()
+        app.run()
+        return 0
 
     def _list_video_tracks(self, video_path: Path) -> int:
         """List subtitle tracks in a video file."""

@@ -347,19 +347,36 @@ class LanguageDetector:
         Generate bilingual filename based on detected languages.
 
         Args:
-            base_path: Base file path
+            base_path: Base file path (can be video or subtitle file)
             lang1: First language code
             lang2: Second language code
-            format_ext: File format extension
+            format_ext: File format extension (without dot)
 
         Returns:
             Generated filename with language codes
+
+        Example:
+            Input: Planet.of.the.Apes.1968.1080p.Bluray.zh.srt, lang1='zh', lang2='en'
+            Output: Planet.of.the.Apes.1968.1080p.Bluray.zh-en.srt
         """
-        # Get the complete base filename without extension
-        # For complex filenames like "Movie.2019.1080p.x264-NTG.mkv"
-        # we want to preserve "Movie.2019.1080p.x264-NTG" completely
-        base_name = base_path.stem  # This gets filename without the last extension
+        base_name = base_path.stem  # Filename without last extension
         base_dir = base_path.parent
+
+        # Strip existing language codes from the base name
+        # Common patterns: .zh, .en, .chi, .eng, .chs, .cht, .jpn, .kor, etc.
+        lang_patterns = [
+            '.zh', '.en', '.chi', '.eng', '.chs', '.cht', '.cn', '.chinese', '.english',
+            '.ja', '.jp', '.jpn', '.japanese', '.ko', '.kr', '.kor', '.korean',
+            '.fr', '.fre', '.fra', '.french', '.de', '.ger', '.deu', '.german',
+            '.es', '.spa', '.spanish', '.bilingual', '.dual'
+        ]
+
+        # Remove language suffix from base name (case insensitive)
+        clean_base = base_name
+        for pattern in lang_patterns:
+            if clean_base.lower().endswith(pattern):
+                clean_base = clean_base[:-len(pattern)]
+                break  # Only remove one language code
 
         # Check if both languages were detected
         if lang1 != 'unknown' and lang2 != 'unknown':
@@ -373,54 +390,11 @@ class LanguageDetector:
                 languages = sorted([lang1, lang2])
 
             lang_suffix = '-'.join(languages)
-            return base_dir / f"{base_name}.{lang_suffix}.{format_ext}"
+            return base_dir / f"{clean_base}.{lang_suffix}.{format_ext}"
         else:
             # Fallback to generic bilingual naming
             logger.info(f"Could not detect both languages (detected: {lang1}, {lang2}), using fallback naming")
-            return base_dir / f"{base_name}.bilingual.{format_ext}"
-
-    @staticmethod
-    def detect_language_from_filename(filename: str) -> str:
-        """
-        Detect language from filename patterns.
-
-        Args:
-            filename: Filename to analyze
-
-        Returns:
-            Language code ('zh', 'en', 'ja', etc.) or 'unknown'
-        """
-        filename_lower = str(filename).lower()
-
-        # Chinese patterns
-        if any(pattern in filename_lower for pattern in ['.zh.', '.chi.', '.chs.', '.cht.', '.cn.', '.chinese.', '_zh.', '_chi.', '_chs.', '_cht.', '_cn.', '_chinese.']):
-            return 'zh'
-
-        # Japanese patterns
-        if any(pattern in filename_lower for pattern in ['.ja.', '.jp.', '.jpn.', '.japanese.', '_ja.', '_jp.', '_jpn.', '_japanese.']):
-            return 'ja'
-
-        # Korean patterns
-        if any(pattern in filename_lower for pattern in ['.ko.', '.kr.', '.kor.', '.korean.', '_ko.', '_kr.', '_kor.', '_korean.']):
-            return 'ko'
-
-        # French patterns
-        if any(pattern in filename_lower for pattern in ['.fr.', '.fre.', '.fra.', '.french.', '_fr.', '_fre.', '_fra.', '_french.']):
-            return 'fr'
-
-        # German patterns
-        if any(pattern in filename_lower for pattern in ['.de.', '.ger.', '.deu.', '.german.', '_de.', '_ger.', '_deu.', '_german.']):
-            return 'de'
-
-        # Spanish patterns
-        if any(pattern in filename_lower for pattern in ['.es.', '.spa.', '.spanish.', '_es.', '_spa.', '_spanish.']):
-            return 'es'
-
-        # English patterns
-        if any(pattern in filename_lower for pattern in ['.en.', '.eng.', '.english.', '_en.', '_eng.', '_english.']):
-            return 'en'
-
-        return 'unknown'
+            return base_dir / f"{clean_base}.bilingual.{format_ext}"
 
     @staticmethod
     def get_language_code_from_track(track) -> str:
