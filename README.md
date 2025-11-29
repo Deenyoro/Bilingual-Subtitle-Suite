@@ -1,275 +1,256 @@
-# Bilingual Subtitle Suite - biss
+# Bilingual Subtitle Suite (BISS)
 
 ![Bilingual Subtitle Suite Logo](images/biss-logo.png)
 
-A sophisticated Python application for processing, aligning, and merging subtitle files with advanced bilingual subtitle creation capabilities. Supports multiple language combinations including Chinese-English, Japanese-English, Korean-English, and more, with intelligent track selection, translation-assisted alignment, and comprehensive video container support.
+A powerful toolkit for creating bilingual subtitles from video files and standalone subtitle files. Supports Chinese-English, Japanese-English, Korean-English and other language combinations with automatic language detection, intelligent track selection, and timing alignment.
 
-## 📺 Example Output
+## Example Output
 
 ![Example Bilingual Subtitle Output](images/biss-fma03.png)
-*Example of bilingual Chinese-English subtitles created by Bilingual Subtitle Suite*
+*Bilingual Chinese-English subtitles created by BISS*
 
-## 🌟 Key Features
+## Features
 
-### 🎬 Advanced Bilingual Subtitle Creation
-- **Intelligent Track Selection**: Automatically identifies main dialogue tracks vs forced/signs tracks
-- **Enhanced Alignment System**: Two-phase alignment with global synchronization and detailed event matching
-- **Large Timing Offset Handling**: Automatically handles timing differences of 50+ seconds between tracks
-- **Translation-Assisted Alignment**: Google Cloud Translation API integration for semantic matching
-- **Cross-Language Content Matching**: Advanced similarity detection for Chinese-English subtitle pairs
-- **Manual Synchronization Interface**: Interactive anchor point selection with millisecond precision
-- **Mixed Track Realignment**: Specialized handling for embedded + external track scenarios
-- **Cross-Language Support**: Chinese, Japanese, Korean, and other languages with English
+### Bilingual Subtitle Creation
+- **Automatic Language Detection**: Identifies languages from filenames and content analysis
+- **Smart Track Selection**: Distinguishes main dialogue from forced/signs-only tracks
+- **Timing Alignment**: Handles timing differences between tracks automatically
+- **Translation-Assisted Matching**: Optional Google Cloud Translation API for semantic alignment
+- **Multiple Language Support**: Chinese, Japanese, Korean paired with English
 
-### 🔧 Comprehensive Processing Pipeline
-- **Video Container Integration**: Extract and process embedded subtitles from MKV, MP4, AVI containers
-- **Multiple Format Support**: SRT, ASS, VTT, and PGS (via OCR conversion)
-- **Encoding Conversion**: UTF-8 conversion with automatic encoding detection
-- **Batch Processing**: Automated multi-file workflows with confirmation options
-- **Backup Management**: Automatic backup creation with cleanup utilities
+### Processing Capabilities
+- **Video Container Support**: Extract embedded subtitles from MKV, MP4, AVI, MOV, WebM, TS
+- **Subtitle Formats**: SRT, ASS/SSA, VTT input and output
+- **PGS Conversion**: OCR-based conversion of image subtitles (requires setup)
+- **Encoding Conversion**: Automatic detection and UTF-8 conversion
+- **Timing Adjustment**: Shift subtitles by offset or set specific start times
+- **Batch Processing**: Process entire directories with single commands
 
-### 🎯 PGS Subtitle Conversion
-- **OCR Integration**: Tesseract OCR with Chinese (Simplified/Traditional) and English support
-- **Cross-Platform Setup**: Automated installation for Windows, Linux, and macOS
-- **Intelligent Activation**: PGS conversion as fallback when no text-based subtitles available
-- **Self-Contained Installation**: Clean repository with no bundled dependencies
-- **Powered by PGSRip**: Integration with [PGSRip by ratoaq2](https://github.com/ratoaq2/pgsrip) for reliable PGS extraction
+### User Interfaces
+- **Graphical Interface**: Full-featured GUI with drag-and-drop, preview, and visual feedback
+- **Command Line**: Scriptable CLI with comprehensive options
+- **Interactive Mode**: Menu-driven text interface for guided workflows
 
-### 🖥️ Dual Interface System
-- **Command-Line Interface**: Extensive CLI with 20+ options for automation
-- **Interactive Mode**: User-friendly menu system with guided workflows
-- **Feature Parity**: All capabilities available in both interfaces
+## Installation
 
-## 🚀 Quick Start
+### Requirements
+- Python 3.8 or higher (3.10+ recommended)
+- FFmpeg installed and available in PATH
+- Git (for cloning)
 
-### Prerequisites
-- **Python 3.8+** (Python 3.10+ recommended)
-- **FFmpeg** (for video container processing)
-- **Git** (for installation)
-
-### Installation
+### Setup
 ```bash
-# Clone the repository
 git clone <repository-url>
 cd chsub
-
-# Install Python dependencies
 pip install -r requirements.txt
 
 # Verify installation
 python biss.py --version
 ```
 
-### Basic Usage
-```bash
-# Interactive mode (recommended for beginners)
-python biss.py
-
-# Create bilingual subtitles from video file
-python biss.py merge movie.mkv
-
-# Process with enhanced alignment for large timing offsets
-python biss.py merge movie.mkv --auto-align --use-translation --alignment-threshold 0.3
-
-# Enable mixed track realignment for embedded + external scenarios
-python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
-
-# Batch process entire directory
-python biss.py batch-merge "Season 01" --auto-confirm
-```
-
 ### Optional: PGS Subtitle Conversion
 ```bash
-# One-command setup for PGS conversion
 python biss.py setup-pgsrip install
-
-# Convert PGS subtitles to SRT
-python biss.py convert-pgs movie.mkv --language chi_sim
 ```
 
-## 📖 Documentation
+## Usage
 
-### Complete Documentation
-- **[CLI Reference](docs/cli-reference.md)** - Complete command-line interface documentation
-- **[Interactive Mode Guide](docs/interactive-guide.md)** - Step-by-step interactive interface guide
-- **[Advanced Features](docs/advanced-features.md)** - Enhanced alignment, translation integration, manual sync
-- **[PGS Conversion](docs/pgs-conversion.md)** - PGS subtitle conversion setup and usage
-- **[Real-World Examples](docs/examples.md)** - Practical usage scenarios and workflows
-- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
-- **[API Documentation](docs/api-reference.md)** - Developer reference for extending functionality
-
-### Quick Reference
-
-#### Basic Commands
+### Graphical Interface (Recommended for Beginners)
 ```bash
-# Interactive mode
+python biss.py gui
+# Or simply:
 python biss.py
+```
 
-# Merge subtitles from video
+The GUI provides:
+- Tabbed interface for Merge, Shift, Convert, and Batch operations
+- File preview with Ctrl+P
+- Automatic language detection labels
+- Quick offset buttons for timing adjustment
+- Real-time operation logging
+
+### Command Line
+
+**Merge subtitles from two files:**
+```bash
+python biss.py merge chinese.srt english.srt
+```
+Languages are detected automatically from filenames (.zh, .chi, .en, .eng, etc.) or content.
+
+**Extract and merge from video:**
+```bash
 python biss.py merge movie.mkv
-
-# Enhanced alignment with manual control
-python biss.py merge movie.mkv --auto-align --manual-align
-
-# Translation-assisted alignment for cross-language content
-python biss.py merge movie.mkv --auto-align --use-translation --alignment-threshold 0.3
-
-# Mixed track realignment for major timing offsets
-python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
-
-# Batch processing with enhanced alignment
-python biss.py batch-merge "Season 01" --auto-align --use-translation --auto-confirm
 ```
+Extracts embedded Chinese and English tracks and creates bilingual output.
 
-#### Advanced Features
+**Shift subtitle timing:**
 ```bash
-# Manual synchronization interface
-python biss.py merge movie.mkv --manual-align --sync-strategy manual
+# Shift back 2.5 seconds
+python biss.py shift subtitle.srt --offset="-2.5s"
 
-# High-precision alignment for well-synchronized tracks
-python biss.py merge movie.mkv --auto-align --alignment-threshold 0.95
+# Shift forward 500 milliseconds
+python biss.py shift subtitle.srt --offset 500ms
 
-# Low-threshold alignment for large timing offsets
-python biss.py merge movie.mkv --auto-align --alignment-threshold 0.3 --use-translation
-
-# Mixed track realignment for embedded + external scenarios
-python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
-
-# PGS conversion integration
-python biss.py merge movie.mkv --force-pgs
-
-# Bulk alignment (non-combined)
-python biss.py batch-align /media/subtitles --reference-language en
+# Set first subtitle to specific timestamp
+python biss.py shift subtitle.srt --first-line-at "00:01:23,456"
 ```
 
-## 🏗️ Architecture
-
-### Project Structure
-```
-BilingualSubtitleSuite/
-├── biss.py                          # Main application entry point
-├── docs/                           # Comprehensive documentation
-├── core/                           # Core processing modules
-│   ├── subtitle_formats.py         # Format parsing (SRT, ASS, VTT)
-│   ├── video_containers.py         # Video container handling
-│   ├── track_analyzer.py           # Intelligent track analysis
-│   ├── language_detection.py       # Language identification
-│   └── translation_service.py      # Translation API integration
-├── processors/                     # High-level workflows
-│   ├── merger.py                   # Bilingual subtitle merging
-│   ├── converter.py                # Encoding conversion
-│   ├── realigner.py                # Subtitle alignment
-│   ├── batch_processor.py          # Batch operations
-│   └── bulk_aligner.py             # Bulk alignment workflows
-├── ui/                            # User interfaces
-│   ├── cli.py                     # Command-line interface
-│   ├── interactive.py             # Interactive menu system
-│   └── manual_sync.py             # Manual synchronization interface
-├── utils/                         # Utility modules
-│   ├── file_operations.py         # File management
-│   ├── backup_manager.py          # Backup utilities
-│   └── logging_config.py          # Logging configuration
-└── third_party/                  # Third-party integrations
-    ├── pgsrip_wrapper.py          # PGS conversion integration
-    ├── setup_pgsrip.py            # Automated PGS setup
-    └── pgsrip_install/            # Auto-downloaded components
-```
-
-### Supported Formats
-- **Video**: MKV, MP4, AVI, M4V, MOV, WebM, TS, MPG
-- **Subtitles**: SRT, ASS/SSA, VTT, PGS (via OCR)
-- **Encodings**: UTF-8, UTF-16, GB18030, GBK, Big5, Shift-JIS
-- **Languages**: Chinese (Simplified/Traditional), English, Japanese, Korean
-
-## 🎯 Real-World Examples
-
-### Anime Processing
+**Convert encoding:**
 ```bash
-# Basic anime episode with embedded English and external Chinese
-python biss.py merge "Made in Abyss S02E01.mkv"
-# Output: Made in Abyss S02E01.zh-en.srt
-
-# Large timing offset scenario (56+ second difference)
-python biss.py merge "Made in Abyss S02E01.mkv" --auto-align --use-translation --alignment-threshold 0.3
-# Automatically detects and corrects major timing misalignment
-
-# Episode with perfect first-line alignment (80+ second offset)
-python biss.py merge "Made in Abyss S02E02.mkv" --auto-align --enable-mixed-realignment
-# Handles embedded English + external Chinese with major timing differences
-
-# Batch process entire season with enhanced alignment
-python biss.py batch-merge "Season 02" --auto-align --use-translation --alignment-threshold 0.3 --auto-confirm
+python biss.py convert subtitle.srt
 ```
+Automatically detects encoding and converts to UTF-8.
 
-### Movie Processing
+**Preview changes without executing:**
 ```bash
-# Movie with PGS subtitles
-python biss.py merge "Batman Ninja (2018).mkv" --force-pgs --language chi_sim
-
-# High-precision alignment for critical content
-python biss.py merge "important-movie.mkv" \
-  --auto-align --manual-align --use-translation --alignment-threshold 0.95
+python biss.py --dry-run merge chinese.srt english.srt
 ```
 
-### Batch Operations
+**Batch operations:**
 ```bash
-# Process entire TV season
-python biss.py batch-merge "Season 01" --auto-align --auto-confirm
+# Merge all videos in directory
+python biss.py batch-merge "Season 01" --auto-confirm
 
-# Convert all subtitle files to UTF-8
-python biss.py batch-convert /media/subtitles --encoding utf-8 --backup
+# Convert all subtitles to UTF-8
+python biss.py batch-convert /path/to/subtitles --recursive
 ```
 
-## 🔧 Configuration
+### Interactive Mode
+```bash
+python biss.py interactive
+```
+Presents a menu-driven interface for all operations.
+
+## Advanced Options
+
+### Alignment for Timing Mismatches
+When subtitle tracks have different timing:
+```bash
+python biss.py merge movie.mkv --auto-align
+```
+
+For large timing offsets (50+ seconds):
+```bash
+python biss.py merge movie.mkv --auto-align --alignment-threshold 0.3
+```
+
+With translation assistance for better cross-language matching:
+```bash
+python biss.py merge movie.mkv --auto-align --use-translation
+```
+
+### Track Selection
+```bash
+# List available tracks
+python biss.py merge movie.mkv --list-tracks
+
+# Force specific track IDs
+python biss.py merge movie.mkv --chinese-track 3 --english-track 5
+
+# Prefer external files over embedded
+python biss.py merge movie.mkv --prefer-external
+```
+
+### Output Control
+```bash
+# Specify output path
+python biss.py merge file1.srt file2.srt -o output.srt
+
+# Choose output format
+python biss.py merge file1.srt file2.srt --format ass
+```
+
+## Project Structure
+
+```
+biss/
+├── biss.py                 # Main entry point
+├── core/                   # Core processing modules
+│   ├── subtitle_formats.py # SRT, ASS, VTT parsing
+│   ├── video_containers.py # FFmpeg integration
+│   ├── language_detection.py
+│   ├── encoding_detection.py
+│   └── translation_service.py
+├── processors/             # High-level operations
+│   ├── merger.py           # Bilingual merging
+│   ├── converter.py        # Encoding conversion
+│   ├── timing_adjuster.py  # Timing adjustment
+│   ├── realigner.py        # Subtitle alignment
+│   └── batch_processor.py  # Batch operations
+├── ui/                     # User interfaces
+│   ├── gui.py              # Tkinter GUI
+│   ├── cli.py              # Command-line interface
+│   └── interactive.py      # Interactive text mode
+├── utils/                  # Utilities
+│   ├── backup_manager.py   # Backup handling
+│   ├── file_operations.py
+│   └── logging_config.py
+└── third_party/            # External integrations
+    └── pgsrip_wrapper.py   # PGS conversion
+```
+
+## Supported Formats
+
+| Type | Formats |
+|------|---------|
+| Video | MKV, MP4, AVI, M4V, MOV, WebM, TS, MPG, MPEG |
+| Subtitles | SRT, ASS, SSA, VTT |
+| Encodings | UTF-8, UTF-16, GB18030, GBK, Big5, Shift-JIS, and more |
+| Languages | Chinese (Simplified/Traditional), English, Japanese, Korean |
+
+## Configuration
 
 ### Environment Variables
 ```bash
-# Google Translation API (optional)
+# Google Translation API key (optional, for --use-translation)
 export GOOGLE_TRANSLATE_API_KEY="your-api-key"
 
-# Custom FFmpeg timeout (default: 900 seconds)
+# FFmpeg timeout in seconds (default: 900)
 export FFMPEG_TIMEOUT=1800
 ```
 
-### CLI Configuration
-- **Alignment Threshold**: `--alignment-threshold 0.8` (0.0-1.0, use 0.3 for large offsets)
-- **Mixed Track Realignment**: `--enable-mixed-realignment` (for embedded + external scenarios)
-- **Translation Assistance**: `--use-translation` (enables cross-language content matching)
-- **Time Matching Window**: `--time-threshold 0.5` (seconds)
-- **Translation Limit**: `--translation-limit 10` (API calls per alignment)
-- **Sync Strategy**: `--sync-strategy auto|first-line|scan|translation|manual`
+### Backup Management
+Backups are created automatically when modifying files in-place. The backup manager keeps the 5 most recent backups per file by default.
 
-## 🚨 Troubleshooting
-
-### Quick Fixes
 ```bash
-# Debug mode for detailed logging
-python biss.py --debug merge movie.mkv
-
-# Check system dependencies
-python biss.py --version
-
-# Verify PGS setup
-python biss.py setup-pgsrip check
+# Clean up old backups
+python biss.py cleanup-backups /path/to/directory --older-than 30
 ```
 
+## Troubleshooting
+
 ### Common Issues
-- **FFmpeg not found**: Install FFmpeg and add to PATH
-- **Encoding detection fails**: `pip install charset-normalizer`
-- **Translation errors**: Verify API key and internet connection
-- **Manual interface not responding**: Use PowerShell instead of Command Prompt
 
-## 🙏 Acknowledgments
+**FFmpeg not found:**
+Install FFmpeg and ensure it's in your system PATH. Test with `ffmpeg -version`.
 
-### Third-Party Integrations
+**Encoding detection fails:**
+```bash
+pip install charset-normalizer
+```
 
-**PGS Subtitle Conversion**: This project integrates [PGSRip by ratoaq2](https://github.com/ratoaq2/pgsrip) for PGS (Presentation Graphic Stream) subtitle extraction and conversion. PGSRip is an excellent tool that enables reliable extraction of image-based subtitles from video containers. We gratefully acknowledge ratoaq2's work in making PGS subtitle processing accessible.
+**Garbled characters in output:**
+The source file may have incorrect encoding. Try:
+```bash
+python biss.py convert subtitle.srt --force
+```
 
-**OCR Technology**: Powered by [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) for optical character recognition with multi-language support.
+**Timing mismatch after merge:**
+Use alignment options:
+```bash
+python biss.py merge file1.srt file2.srt --auto-align
+```
 
-**Video Processing**: Built on [FFmpeg](https://ffmpeg.org/) for robust video container handling and subtitle track extraction.
+### Debug Mode
+For detailed logging:
+```bash
+python biss.py --debug merge movie.mkv
+```
 
-### Third-Party Licenses
-- **PGSRip**: Licensed under Apache License 2.0 - see [PGSRip repository](https://github.com/ratoaq2/pgsrip) for details
-- **Tesseract OCR**: Licensed under Apache License 2.0
-- **FFmpeg**: Licensed under LGPL/GPL depending on configuration
+## Acknowledgments
+
+This project integrates several excellent open-source tools:
+
+- **[PGSRip](https://github.com/ratoaq2/pgsrip)** by ratoaq2 - PGS subtitle extraction (Apache 2.0)
+- **[Tesseract OCR](https://github.com/tesseract-ocr/tesseract)** - Optical character recognition (Apache 2.0)
+- **[FFmpeg](https://ffmpeg.org/)** - Video/audio processing (LGPL/GPL)

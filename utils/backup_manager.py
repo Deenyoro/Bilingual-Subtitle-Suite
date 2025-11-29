@@ -18,38 +18,87 @@ logger = get_logger(__name__)
 
 class BackupManager:
     """Manages backup files for subtitle processing operations."""
-    
-    def __init__(self):
-        """Initialize the backup manager."""
-        pass
+
+    # Default maximum number of backups to keep per file
+    DEFAULT_MAX_BACKUPS = 5
+
+    def __init__(self, max_backups: int = DEFAULT_MAX_BACKUPS):
+        """
+        Initialize the backup manager.
+
+        Args:
+            max_backups: Maximum number of backup versions to keep per file.
+                        Set to 0 for unlimited backups.
+        """
+        self.max_backups = max_backups
     
     def create_backup(self, original_file: Path, backup_suffix: str = '.bak') -> Optional[Path]:
         """
         Create a backup of the original file.
-        
+
+        If max_backups is set, old backups are automatically cleaned up.
+
         Args:
             original_file: Path to the original file
             backup_suffix: Suffix to add to backup file (default: '.bak')
-            
+
         Returns:
             Path to backup file if successful, None otherwise
         """
         if not original_file.exists():
             logger.error(f"Original file not found: {original_file}")
             return None
-        
+
         backup_file = original_file.with_suffix(original_file.suffix + backup_suffix)
-        
+
         try:
             # Copy the original file to backup
             import shutil
             shutil.copy2(original_file, backup_file)
             logger.info(f"Created backup: {backup_file}")
+
+            # Enforce max_backups limit
+            if self.max_backups > 0:
+                self._enforce_backup_limit(original_file)
+
             return backup_file
-            
+
         except Exception as e:
             logger.error(f"Failed to create backup {backup_file}: {e}")
             return None
+
+    def _enforce_backup_limit(self, original_file: Path) -> None:
+        """
+        Enforce the maximum backup limit for a file.
+
+        Args:
+            original_file: The original file whose backups to limit
+        """
+        # Find all backup files for this original file
+        parent_dir = original_file.parent
+        base_pattern = original_file.name + "*.bak*"
+
+        backup_files = list(parent_dir.glob(base_pattern))
+        # Also check for .srt.bak, .ass.bak patterns
+        backup_files.extend(parent_dir.glob(original_file.stem + "*.bak*"))
+
+        # Deduplicate
+        backup_files = list(set(backup_files))
+
+        if len(backup_files) <= self.max_backups:
+            return
+
+        # Sort by modification time (oldest first)
+        backup_files.sort(key=lambda f: f.stat().st_mtime)
+
+        # Remove oldest backups to stay within limit
+        files_to_remove = len(backup_files) - self.max_backups
+        for i in range(files_to_remove):
+            try:
+                backup_files[i].unlink()
+                logger.debug(f"Removed old backup: {backup_files[i]}")
+            except OSError as e:
+                logger.warning(f"Could not remove old backup {backup_files[i]}: {e}")
     
     def restore_from_backup(self, backup_file: Path, target_file: Optional[Path] = None) -> bool:
         """

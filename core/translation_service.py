@@ -32,6 +32,7 @@ class TranslationResult:
     source_language: str
     target_language: str
     confidence: float = 0.0
+    error: Optional[str] = None
 
 
 class GoogleTranslationService:

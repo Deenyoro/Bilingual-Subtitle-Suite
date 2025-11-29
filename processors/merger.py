@@ -69,6 +69,10 @@ class BilingualMerger:
         self.video_handler = VideoContainerHandler()
         self.pgsrip_wrapper = get_pgsrip_wrapper() if not no_pgs else None
 
+        # Initialize track info storage (prevents AttributeError when checking hasattr)
+        self._track1_info = {'source_type': 'unknown', 'language': 'unknown'}
+        self._track2_info = {'source_type': 'unknown', 'language': 'unknown'}
+
         # Initialize alignment components
         self.similarity_aligner = SimilarityAligner(min_confidence=alignment_threshold)
         self.translation_service = None
@@ -605,19 +609,16 @@ class BilingualMerger:
             major_misalignment = self._detect_major_timing_misalignment(events1, events2)
 
             if major_misalignment and (self.auto_align or self.manual_align or self.use_translation):
-                logger.warning("🚨 MAJOR TIMING MISALIGNMENT DETECTED (>5s difference)")
-                logger.warning("🚨 Mixed embedded + external tracks with significant timing offset")
-                logger.info("🔧 Enhanced mixed track realignment is ENABLED (auto-align/translation requested)")
+                logger.info("📊 Timing offset detected (>5s) between embedded and external tracks")
+                logger.info("🔧 Applying automatic realignment to synchronize tracks...")
 
                 # Apply enhanced realignment for mixed tracks
                 merged_events = self._handle_mixed_track_realignment(events1, events2)
                 method_used = "mixed_track_realignment"
             elif major_misalignment:
-                logger.warning("🚨 MAJOR TIMING MISALIGNMENT DETECTED (>5s difference)")
-                logger.warning("🚨 Mixed embedded + external tracks with significant timing offset")
-                logger.warning("⚠️ Enhanced mixed track realignment is DISABLED")
-                logger.warning("⚠️ Use --auto-align or --use-translation flags to enable enhanced realignment")
-                logger.info("🔒 Falling back to timing preservation (may result in poor alignment)")
+                logger.info("📊 Timing offset detected (>5s) between embedded and external tracks")
+                logger.info("💡 Tip: Use --auto-align for better results with mismatched timing")
+                logger.info("🔒 Using timing preservation (subtitles may appear out of sync)")
                 merged_events = self._merge_with_preserved_timing(events1, events2)
                 method_used = "preserved_timing"
             else:
@@ -625,21 +626,29 @@ class BilingualMerger:
                 merged_events = self._merge_with_preserved_timing(events1, events2)
                 method_used = "preserved_timing"
         elif self.auto_align or self.manual_align or self.use_translation:
-            logger.info("⚙️ Enhanced alignment requested - checking synchronization status")
-            # Only use enhanced alignment for massively misaligned subtitles (>1s differences)
-            if not self._tracks_are_well_synchronized(events1, events2):
-                logger.warning("⚠️ MASSIVE MISALIGNMENT DETECTED: Using enhanced alignment (timing will be modified)")
-                logger.warning("⚠️ This should only be used for external files with major timing issues")
+            logger.info("⚙️ Enhanced alignment requested - assessing synchronization level")
+
+            # Use graduated synchronization assessment instead of binary check
+            sync_level = self._assess_synchronization_level(events1, events2)
+
+            if sync_level in ["EXCELLENT", "GOOD"]:
+                logger.info(f"✅ Tracks have {sync_level.lower()} synchronization - using comprehensive preservation")
+                merged_events = self._merge_with_comprehensive_preservation(events1, events2)
+                method_used = "comprehensive_preservation"
+            elif sync_level == "MODERATE":
+                logger.info(f"⚙️ Moderate timing differences detected - using enhanced alignment")
+                logger.info("📊 Timing statistics suggest enhanced alignment will improve quality")
                 merged_events = self._merge_with_enhanced_alignment(events1, events2)
                 method_used = "enhanced_alignment"
-            else:
-                logger.info("✅ Tracks are synchronized - using simple overlap with timing preservation")
-                merged_events = self._merge_with_simple_overlap(events1, events2)
-                method_used = "simple_overlap"
+            else:  # POOR
+                logger.info(f"📊 Significant timing differences detected - applying enhanced alignment")
+                logger.info("🔧 This will adjust timing to better synchronize the subtitles")
+                merged_events = self._merge_with_enhanced_alignment(events1, events2)
+                method_used = "enhanced_alignment"
         else:
-            logger.info("📋 Using simple overlap method (default - preserves timing)")
-            merged_events = self._merge_with_simple_overlap(events1, events2)
-            method_used = "simple_overlap"
+            logger.info("📋 Using comprehensive merge method (preserves all entries from both languages)")
+            merged_events = self._merge_with_comprehensive_preservation(events1, events2)
+            method_used = "comprehensive_preservation"
 
         # Validate timing preservation
         self._validate_timing_preservation(events1, events2, merged_events, method_used)
@@ -654,24 +663,91 @@ class BilingualMerger:
         """
         return self._tracks_are_well_synchronized(events1, events2, threshold)
 
-    def _tracks_are_well_synchronized(self, events1: List[SubtitleEvent],
-                                    events2: List[SubtitleEvent],
-                                    threshold: float = 0.5) -> bool:
+    def _assess_synchronization_level(self, events1: List[SubtitleEvent],
+                                     events2: List[SubtitleEvent]) -> str:
         """
-        Check if two embedded tracks are already well-synchronized.
+        Assess the synchronization level between two subtitle tracks.
 
-        This determines whether tracks need realignment or just timing preservation.
-        Realignment features should ONLY be used for massively misaligned subtitles
-        (different timing by seconds), not for minor timing differences.
+        Returns graduated assessment instead of binary synchronized/misaligned.
+        This prevents false positive "MASSIVE MISALIGNMENT" warnings for well-aligned files.
 
         Args:
             events1: First list of events
             events2: Second list of events
-            threshold: Maximum timing difference in seconds to consider "well-synchronized"
 
         Returns:
-            True if tracks are well-synchronized (minor differences <500ms),
-            False if they need realignment (major differences >500ms)
+            Synchronization level: "EXCELLENT", "GOOD", "MODERATE", or "POOR"
+        """
+        if not events1 or not events2:
+            return "POOR"
+
+        # Sample first 10 events to check synchronization
+        sample_size = min(10, len(events1), len(events2))
+        timing_differences = []
+
+        for i in range(sample_size):
+            time_diff = abs(events1[i].start - events2[i].start)
+            timing_differences.append(time_diff)
+
+        # Calculate timing statistics with outlier handling
+        avg_diff, max_diff, core_avg_diff = self._calculate_timing_statistics(timing_differences)
+
+        # Graduated assessment levels
+        if core_avg_diff < 0.5 and max_diff < 2.0:
+            level = "EXCELLENT"  # Use timing preservation
+        elif core_avg_diff < 1.0 and max_diff < 5.0:
+            level = "GOOD"       # Use timing preservation with minor adjustments
+        elif core_avg_diff < 3.0 and max_diff < 10.0:
+            level = "MODERATE"   # Use enhanced alignment
+        else:
+            level = "POOR"       # Use enhanced alignment with warnings
+
+        logger.info(f"Synchronization assessment: level={level}, avg_diff={avg_diff:.3f}s, "
+                   f"core_avg_diff={core_avg_diff:.3f}s, max_diff={max_diff:.3f}s")
+
+        return level
+
+    def _calculate_timing_statistics(self, timing_differences: List[float]) -> Tuple[float, float, float]:
+        """
+        Calculate timing statistics with outlier handling.
+
+        Args:
+            timing_differences: List of timing differences in seconds
+
+        Returns:
+            Tuple of (avg_diff, max_diff, core_avg_diff)
+            core_avg_diff excludes worst 20% of outliers
+        """
+        if not timing_differences:
+            return 0.0, 0.0, 0.0
+
+        avg_diff = sum(timing_differences) / len(timing_differences)
+        max_diff = max(timing_differences)
+
+        # Calculate core average excluding worst 20% of outliers
+        sorted_diffs = sorted(timing_differences)
+        outlier_cutoff = int(len(sorted_diffs) * 0.8)  # Keep best 80%
+        core_diffs = sorted_diffs[:outlier_cutoff] if outlier_cutoff > 0 else sorted_diffs
+        core_avg_diff = sum(core_diffs) / len(core_diffs) if core_diffs else avg_diff
+
+        return avg_diff, max_diff, core_avg_diff
+
+    def _tracks_are_well_synchronized(self, events1: List[SubtitleEvent],
+                                    events2: List[SubtitleEvent],
+                                    threshold: float = 1.0) -> bool:
+        """
+        Check if two tracks are well-synchronized (backward compatibility method).
+
+        Updated with improved thresholds and outlier tolerance to reduce false positives.
+        Now uses 1.0s average threshold and 3.0s max threshold for more realistic assessment.
+
+        Args:
+            events1: First list of events
+            events2: Second list of events
+            threshold: Average timing difference threshold in seconds (default: 1.0s)
+
+        Returns:
+            True if tracks are well-synchronized, False if they need realignment
         """
         if not events1 or not events2:
             return False
@@ -684,14 +760,14 @@ class BilingualMerger:
             time_diff = abs(events1[i].start - events2[i].start)
             timing_differences.append(time_diff)
 
-        # Calculate average timing difference
-        avg_diff = sum(timing_differences) / len(timing_differences)
-        max_diff = max(timing_differences)
+        # Calculate timing statistics with outlier handling
+        avg_diff, max_diff, core_avg_diff = self._calculate_timing_statistics(timing_differences)
 
-        is_synchronized = avg_diff < threshold and max_diff < threshold * 2
+        # Updated thresholds: 1.0s average, 3.0s max, with outlier tolerance
+        is_synchronized = core_avg_diff < threshold and max_diff < threshold * 3
 
-        logger.info(f"Synchronization check: avg_diff={avg_diff:.3f}s, max_diff={max_diff:.3f}s, "
-                   f"threshold={threshold}s, synchronized={is_synchronized}")
+        logger.info(f"Synchronization check: avg_diff={avg_diff:.3f}s, core_avg_diff={core_avg_diff:.3f}s, "
+                   f"max_diff={max_diff:.3f}s, threshold={threshold}s, synchronized={is_synchronized}")
 
         return is_synchronized
 
@@ -807,9 +883,8 @@ class BilingualMerger:
         anchor_result = self._find_semantic_alignment_anchor(embedded_events, external_events)
 
         if not anchor_result:
-            logger.error("❌ Failed to find semantic alignment anchor point")
-            logger.warning("⚠️ Falling back to timing preservation without realignment")
-            logger.warning("⚠️ This will use original events1 and events2, not realigned events")
+            logger.info("📊 Could not find a reliable alignment anchor point")
+            logger.info("🔒 Using timing preservation (original timing will be kept)")
             return self._merge_with_preserved_timing(events1, events2)
 
         embedded_anchor_idx, external_anchor_idx, confidence, time_offset = anchor_result
@@ -2848,6 +2923,120 @@ class BilingualMerger:
             logger.warning(f"   This should not happen with exact timing preservation!")
         else:
             logger.info(f"✅ EVENT COUNT MATCH: {len(merged_events)} events (as expected)")
+
+        return merged_events
+
+    def _merge_with_comprehensive_preservation(self, events1: List[SubtitleEvent],
+                                             events2: List[SubtitleEvent]) -> List[SubtitleEvent]:
+        """
+        Merge events ensuring ALL entries from BOTH languages are preserved.
+
+        This method creates a comprehensive bilingual output that includes every single
+        subtitle entry from both source files, ensuring no content is lost from either language.
+
+        Args:
+            events1: First list of events (e.g., Chinese)
+            events2: Second list of events (e.g., English)
+
+        Returns:
+            Merged events with ALL content from both languages preserved
+        """
+        logger.info("🔧 COMPREHENSIVE PRESERVATION: Ensuring ALL entries from both languages are included")
+        logger.info(f"   Events1 count: {len(events1)}")
+        logger.info(f"   Events2 count: {len(events2)}")
+
+        if not events1 and not events2:
+            return []
+        if not events1:
+            return events2.copy()
+        if not events2:
+            return events1.copy()
+
+        merged_events = []
+        used_events1 = set()
+        used_events2 = set()
+
+        # Phase 1: Create bilingual events for overlapping/matching content
+        for i, event1 in enumerate(events1):
+            best_match_event2 = None
+            best_match_index = -1
+            best_score = 0.0
+
+            for j, event2 in enumerate(events2):
+                if j in used_events2:
+                    continue
+
+                # Calculate overlap score
+                overlap_start = max(event1.start, event2.start)
+                overlap_end = min(event1.end, event2.end)
+                overlap_duration = max(0, overlap_end - overlap_start)
+
+                if overlap_duration > 0:
+                    # Calculate overlap percentage
+                    event1_duration = event1.end - event1.start
+                    event2_duration = event2.end - event2.start
+                    avg_duration = (event1_duration + event2_duration) / 2
+                    overlap_score = overlap_duration / avg_duration if avg_duration > 0 else 0
+
+                    if overlap_score > best_score and overlap_score > 0.3:  # At least 30% overlap
+                        best_score = overlap_score
+                        best_match_event2 = event2
+                        best_match_index = j
+
+            # If we found a good match, create bilingual entry
+            if best_match_event2 and best_match_index >= 0:
+                used_events1.add(i)
+                used_events2.add(best_match_index)
+
+                # Use the earlier start time and later end time to cover both events
+                merged_start = min(event1.start, best_match_event2.start)
+                merged_end = max(event1.end, best_match_event2.end)
+
+                # Determine language order - check if events1 contains Chinese characters
+                if any('\u4e00' <= char <= '\u9fff' for char in event1.text):
+                    # events1 is Chinese, put Chinese first
+                    combined_text = f"{event1.text}\n{best_match_event2.text}"
+                else:
+                    # events1 is English, put Chinese second (assuming events2 is Chinese)
+                    combined_text = f"{best_match_event2.text}\n{event1.text}"
+
+                merged_events.append(SubtitleEvent(
+                    start=merged_start,
+                    end=merged_end,
+                    text=combined_text
+                ))
+
+        # Phase 2: Add all unused events from events1
+        for i, event1 in enumerate(events1):
+            if i not in used_events1:
+                merged_events.append(SubtitleEvent(
+                    start=event1.start,
+                    end=event1.end,
+                    text=event1.text,
+                    style=event1.style,
+                    raw=event1.raw
+                ))
+
+        # Phase 3: Add all unused events from events2
+        for j, event2 in enumerate(events2):
+            if j not in used_events2:
+                merged_events.append(SubtitleEvent(
+                    start=event2.start,
+                    end=event2.end,
+                    text=event2.text,
+                    style=event2.style,
+                    raw=event2.raw
+                ))
+
+        # Sort by start time
+        merged_events.sort(key=lambda e: e.start)
+
+        logger.info(f"🔧 COMPREHENSIVE PRESERVATION COMPLETE:")
+        logger.info(f"   Total merged events: {len(merged_events)}")
+        logger.info(f"   Events1 used: {len(used_events1)}/{len(events1)}")
+        logger.info(f"   Events2 used: {len(used_events2)}/{len(events2)}")
+        logger.info(f"   Events1 preserved individually: {len(events1) - len(used_events1)}")
+        logger.info(f"   Events2 preserved individually: {len(events2) - len(used_events2)}")
 
         return merged_events
 
