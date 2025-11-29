@@ -29,7 +29,8 @@ class BilingualMerger:
                  manual_align: bool = False, sync_strategy: str = 'auto',
                  reference_language_preference: str = 'auto',
                  force_pgs: bool = False, no_pgs: bool = False,
-                 enable_mixed_realignment: bool = False):
+                 enable_mixed_realignment: bool = False,
+                 top_language: str = 'first'):
         """
         Initialize the bilingual merger.
 
@@ -45,6 +46,7 @@ class BilingualMerger:
             force_pgs: Force PGS usage even when other subtitles exist
             no_pgs: Disable PGS auto-activation
             enable_mixed_realignment: Enable enhanced realignment for mixed embedded+external tracks
+            top_language: Which subtitle appears on top ('first', 'second') - first is the primary/foreign language
         """
         # Validate alignment threshold
         if not 0.0 <= alignment_threshold <= 1.0:
@@ -65,6 +67,7 @@ class BilingualMerger:
         self.force_pgs = force_pgs
         self.no_pgs = no_pgs
         self.enable_mixed_realignment = enable_mixed_realignment
+        self.top_language = top_language  # 'first' or 'second'
 
         self.video_handler = VideoContainerHandler()
         self.pgsrip_wrapper = get_pgsrip_wrapper() if not no_pgs else None
@@ -87,9 +90,31 @@ class BilingualMerger:
         logger.info(f"BilingualMerger initialized: auto_align={auto_align}, "
                    f"use_translation={use_translation}, manual_align={manual_align}, "
                    f"sync_strategy={sync_strategy}, reference_preference={reference_language_preference}, "
-                   f"threshold={alignment_threshold}")
+                   f"threshold={alignment_threshold}, top_language={top_language}")
 
-    
+    def _combine_texts(self, text1: str, text2: str) -> str:
+        """
+        Combine two subtitle texts according to the top_language setting.
+
+        Args:
+            text1: First subtitle text (primary/foreign language)
+            text2: Second subtitle text (secondary/English language)
+
+        Returns:
+            Combined text with newline separator, respecting top_language order
+        """
+        if not text1 and not text2:
+            return ""
+        if not text1:
+            return text2
+        if not text2:
+            return text1
+
+        if self.top_language == 'second':
+            return f"{text2}\n{text1}"
+        else:  # 'first' is default
+            return f"{text1}\n{text2}"
+
     def merge_subtitle_files(self, chinese_path: Optional[Path], english_path: Optional[Path],
                            output_path: Optional[Path], output_format: str = "srt") -> bool:
         """
@@ -2626,8 +2651,8 @@ class BilingualMerger:
                     end_time = event2.end
                     logger.debug(f"🔒 Preserved Track 2 timing: {start_time:.3f}-{end_time:.3f}s")
 
-                # Combine texts
-                combined_text = f"{event1.text}\n{event2.text}"
+                # Combine texts using configured order
+                combined_text = self._combine_texts(event1.text, event2.text)
 
                 merged_event = SubtitleEvent(
                     start=start_time,
@@ -2709,11 +2734,8 @@ class BilingualMerger:
             if not text1 and not text2:
                 continue
 
-            # Combine texts
-            if text1 and text2:
-                combined_text = f"{text1}\n{text2}"
-            else:
-                combined_text = text1 if text1 else text2
+            # Combine texts using configured order
+            combined_text = self._combine_texts(text1, text2)
 
             segments.append(SubtitleEvent(
                 start=seg_start,
@@ -2864,14 +2886,14 @@ class BilingualMerger:
             if best_overlay_index >= 0:
                 used_overlay_indices.add(best_overlay_index)
 
-            # Create bilingual text with Chinese first, English second (always)
+            # Create bilingual text using configured order
             if best_overlay_event:
                 if reference_is_chinese:
-                    # Reference track is Chinese, overlay is English
-                    combined_text = f"{ref_event.text}\n{best_overlay_event.text}"
+                    # Reference track is Chinese (first), overlay is English (second)
+                    combined_text = self._combine_texts(ref_event.text, best_overlay_event.text)
                 else:
-                    # Reference track is English, overlay is Chinese
-                    combined_text = f"{best_overlay_event.text}\n{ref_event.text}"
+                    # Reference track is English (second), overlay is Chinese (first)
+                    combined_text = self._combine_texts(best_overlay_event.text, ref_event.text)
             else:
                 # No overlay text found - use reference text only
                 combined_text = ref_event.text
@@ -2994,11 +3016,11 @@ class BilingualMerger:
 
                 # Determine language order - check if events1 contains Chinese characters
                 if any('\u4e00' <= char <= '\u9fff' for char in event1.text):
-                    # events1 is Chinese, put Chinese first
-                    combined_text = f"{event1.text}\n{best_match_event2.text}"
+                    # events1 is Chinese (first), events2 is English (second)
+                    combined_text = self._combine_texts(event1.text, best_match_event2.text)
                 else:
-                    # events1 is English, put Chinese second (assuming events2 is Chinese)
-                    combined_text = f"{best_match_event2.text}\n{event1.text}"
+                    # events1 is English (second), events2 is Chinese (first)
+                    combined_text = self._combine_texts(best_match_event2.text, event1.text)
 
                 merged_events.append(SubtitleEvent(
                     start=merged_start,
@@ -3103,7 +3125,8 @@ class BilingualMerger:
             # Create merged event with English timing preserved exactly
             if best_chinese_event:
                 used_chinese_indices.add(best_chinese_index)
-                combined_text = f"{best_chinese_event.text}\n{eng_event.text}"
+                # Chinese is first, English is second
+                combined_text = self._combine_texts(best_chinese_event.text, eng_event.text)
             else:
                 combined_text = eng_event.text
 
