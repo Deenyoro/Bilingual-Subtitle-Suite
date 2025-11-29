@@ -345,8 +345,8 @@ class BISSGui:
         self.scanned_tracks = []
         self.external_subs_found = []
 
-        # === Chinese/Foreign Subtitle Source ===
-        chinese_frame = ttk.LabelFrame(tab, text="Chinese/Japanese/Korean Subtitle", padding="10")
+        # === Track 1 (Top Subtitle) ===
+        chinese_frame = ttk.LabelFrame(tab, text="Track 1 (Top Subtitle)", padding="10")
         chinese_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Source selection
@@ -379,8 +379,8 @@ class BISSGui:
         self.chinese_lang_label = ttk.Label(self.chinese_file_frame, text="", foreground='#1E90FF', font=('TkDefaultFont', 9, 'bold'))
         self.chinese_lang_label.pack(side=tk.LEFT, padx=(5, 0))
 
-        # === English Subtitle Source ===
-        english_frame = ttk.LabelFrame(tab, text="English Subtitle", padding="10")
+        # === Track 2 (Bottom Subtitle) ===
+        english_frame = ttk.LabelFrame(tab, text="Track 2 (Bottom Subtitle)", padding="10")
         english_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Source selection
@@ -416,6 +416,20 @@ class BISSGui:
         # === Options Frame ===
         options_frame = ttk.LabelFrame(tab, text="Options", padding="10")
         options_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Row 0: Track order
+        row0 = ttk.Frame(options_frame)
+        row0.pack(fill=tk.X, pady=(0, 5))
+
+        ttk.Label(row0, text="Display order:").pack(side=tk.LEFT)
+        self.merge_top_var = tk.StringVar(value="first")
+        ttk.Radiobutton(row0, text="Track 1 on top", variable=self.merge_top_var,
+                       value="first").pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Radiobutton(row0, text="Track 2 on top", variable=self.merge_top_var,
+                       value="second").pack(side=tk.LEFT, padx=(10, 0))
+
+        ttk.Button(row0, text="Swap Tracks", command=self._swap_merge_files,
+                  width=12).pack(side=tk.LEFT, padx=(20, 0))
 
         # Row 1: Alignment options
         row1 = ttk.Frame(options_frame)
@@ -1123,6 +1137,7 @@ class BISSGui:
         use_translation = self.merge_translation_var.get()
         threshold = float(self.merge_threshold_var.get() or 0.8)
         output_format = self.merge_format_var.get()
+        top_language = self.merge_top_var.get()
 
         def run_merge():
             try:
@@ -1131,7 +1146,8 @@ class BISSGui:
                 merger = BilingualMerger(
                     auto_align=auto_align,
                     use_translation=use_translation,
-                    alignment_threshold=threshold
+                    alignment_threshold=threshold,
+                    top_language=top_language
                 )
 
                 # Determine merge approach based on sources
