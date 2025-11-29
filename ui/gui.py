@@ -320,76 +320,98 @@ class BISSGui:
         # Quick intro
         intro_frame = ttk.Frame(tab)
         intro_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(intro_frame, text="Combine two subtitle files into one bilingual subtitle",
+        ttk.Label(intro_frame, text="Combine subtitles from video tracks and/or external files",
                  style='Subtitle.TLabel').pack(anchor='w')
 
-        # === Input Mode Selection ===
-        self.merge_mode_frame = ttk.LabelFrame(tab, text="Input Mode", padding="10")
-        self.merge_mode_frame.pack(fill=tk.X, pady=(0, 10))
+        # === Video File (Optional) ===
+        video_frame = ttk.LabelFrame(tab, text="Video File (optional - for embedded subtitles)", padding="10")
+        video_frame.pack(fill=tk.X, pady=(0, 10))
 
-        mode_inner = ttk.Frame(self.merge_mode_frame)
-        mode_inner.pack(fill=tk.X)
-
-        self.merge_mode_var = tk.StringVar(value="files")
-        ttk.Radiobutton(mode_inner, text="Two subtitle files (auto-detect languages)",
-                       variable=self.merge_mode_var,
-                       value="files", command=self._update_merge_mode).pack(side=tk.LEFT)
-        ttk.Radiobutton(mode_inner, text="Extract from video file",
-                       variable=self.merge_mode_var,
-                       value="video", command=self._update_merge_mode).pack(side=tk.LEFT, padx=(30, 0))
-
-        # === Two Files Input Frame ===
-        self.merge_files_frame = ttk.LabelFrame(tab, text="Subtitle Files", padding="10")
-        self.merge_files_frame.pack(fill=tk.X, pady=(0, 10))
-
-        # File 1 with info panel
-        f1_container = ttk.Frame(self.merge_files_frame)
-        f1_container.pack(fill=tk.X, pady=(0, 10))
-
-        f1_input = ttk.Frame(f1_container)
-        f1_input.pack(fill=tk.X)
-        ttk.Label(f1_input, text="File 1:", width=8).pack(side=tk.LEFT)
-        self.merge_file1_var = tk.StringVar()
-        self.merge_file1_var.trace('w', lambda *args: self._on_file1_changed())
-        f1_entry = ttk.Entry(f1_input, textvariable=self.merge_file1_var, width=55)
-        f1_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(f1_input, text="Browse...", command=lambda: self._browse_merge_file(1)).pack(side=tk.LEFT, padx=(5, 0))
-
-        self.file1_lang_label = ttk.Label(f1_input, text="", foreground='#1E90FF', font=('TkDefaultFont', 9, 'bold'))
-        self.file1_lang_label.pack(side=tk.LEFT, padx=(10, 0))
-
-        # File 2 with info panel
-        f2_container = ttk.Frame(self.merge_files_frame)
-        f2_container.pack(fill=tk.X)
-
-        f2_input = ttk.Frame(f2_container)
-        f2_input.pack(fill=tk.X)
-        ttk.Label(f2_input, text="File 2:", width=8).pack(side=tk.LEFT)
-        self.merge_file2_var = tk.StringVar()
-        self.merge_file2_var.trace('w', lambda *args: self._on_file2_changed())
-        f2_entry = ttk.Entry(f2_input, textvariable=self.merge_file2_var, width=55)
-        f2_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(f2_input, text="Browse...", command=lambda: self._browse_merge_file(2)).pack(side=tk.LEFT, padx=(5, 0))
-
-        self.file2_lang_label = ttk.Label(f2_input, text="", foreground='#1E90FF', font=('TkDefaultFont', 9, 'bold'))
-        self.file2_lang_label.pack(side=tk.LEFT, padx=(10, 0))
-
-        # Swap button
-        swap_frame = ttk.Frame(self.merge_files_frame)
-        swap_frame.pack(fill=tk.X, pady=(5, 0))
-        ttk.Button(swap_frame, text="Swap Files", command=self._swap_merge_files, width=12).pack(side=tk.LEFT)
-        ttk.Label(swap_frame, text="Language detection is automatic - file order doesn't matter",
-                 style='Subtitle.TLabel').pack(side=tk.LEFT, padx=(15, 0))
-
-        # === Video Input Frame (hidden by default) ===
-        self.merge_video_frame = ttk.LabelFrame(tab, text="Video File", padding="10")
-
-        v_frame = ttk.Frame(self.merge_video_frame)
-        v_frame.pack(fill=tk.X)
+        v_row = ttk.Frame(video_frame)
+        v_row.pack(fill=tk.X)
         self.merge_video_var = tk.StringVar()
-        ttk.Entry(v_frame, textvariable=self.merge_video_var, width=65).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(v_frame, text="Browse...", command=self._browse_merge_video).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(v_frame, text="List Tracks", command=self._list_tracks).pack(side=tk.LEFT, padx=(5, 0))
+        self.merge_video_var.trace('w', lambda *args: self._on_video_changed())
+        ttk.Entry(v_row, textvariable=self.merge_video_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(v_row, text="Browse...", command=self._browse_merge_video).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(v_row, text="Scan Tracks", command=self._scan_video_tracks).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Embedded tracks display
+        self.tracks_frame = ttk.Frame(video_frame)
+        self.tracks_frame.pack(fill=tk.X, pady=(5, 0))
+        self.tracks_label = ttk.Label(self.tracks_frame, text="No video selected", style='Subtitle.TLabel')
+        self.tracks_label.pack(anchor='w')
+
+        # Store scanned tracks
+        self.scanned_tracks = []
+        self.external_subs_found = []
+
+        # === Chinese/Foreign Subtitle Source ===
+        chinese_frame = ttk.LabelFrame(tab, text="Chinese/Japanese/Korean Subtitle", padding="10")
+        chinese_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Source selection
+        chi_source_row = ttk.Frame(chinese_frame)
+        chi_source_row.pack(fill=tk.X, pady=(0, 5))
+
+        self.chinese_source_var = tk.StringVar(value="auto")
+        ttk.Radiobutton(chi_source_row, text="Auto-detect", variable=self.chinese_source_var,
+                       value="auto", command=self._update_chinese_source).pack(side=tk.LEFT)
+        ttk.Radiobutton(chi_source_row, text="Embedded track", variable=self.chinese_source_var,
+                       value="embedded", command=self._update_chinese_source).pack(side=tk.LEFT, padx=(15, 0))
+        ttk.Radiobutton(chi_source_row, text="External file", variable=self.chinese_source_var,
+                       value="external", command=self._update_chinese_source).pack(side=tk.LEFT, padx=(15, 0))
+
+        # Embedded track selector (hidden by default)
+        self.chinese_track_frame = ttk.Frame(chinese_frame)
+        ttk.Label(self.chinese_track_frame, text="Track:").pack(side=tk.LEFT)
+        self.chinese_track_var = tk.StringVar()
+        self.chinese_track_combo = ttk.Combobox(self.chinese_track_frame, textvariable=self.chinese_track_var,
+                                                 width=50, state='readonly')
+        self.chinese_track_combo.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+
+        # External file input
+        self.chinese_file_frame = ttk.Frame(chinese_frame)
+        ttk.Label(self.chinese_file_frame, text="File:").pack(side=tk.LEFT)
+        self.chinese_file_var = tk.StringVar()
+        self.chinese_file_var.trace('w', lambda *args: self._on_chinese_file_changed())
+        ttk.Entry(self.chinese_file_frame, textvariable=self.chinese_file_var, width=50).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(self.chinese_file_frame, text="Browse...", command=lambda: self._browse_sub_file('chinese')).pack(side=tk.LEFT, padx=(5, 0))
+        self.chinese_lang_label = ttk.Label(self.chinese_file_frame, text="", foreground='#1E90FF', font=('TkDefaultFont', 9, 'bold'))
+        self.chinese_lang_label.pack(side=tk.LEFT, padx=(5, 0))
+
+        # === English Subtitle Source ===
+        english_frame = ttk.LabelFrame(tab, text="English Subtitle", padding="10")
+        english_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Source selection
+        eng_source_row = ttk.Frame(english_frame)
+        eng_source_row.pack(fill=tk.X, pady=(0, 5))
+
+        self.english_source_var = tk.StringVar(value="auto")
+        ttk.Radiobutton(eng_source_row, text="Auto-detect", variable=self.english_source_var,
+                       value="auto", command=self._update_english_source).pack(side=tk.LEFT)
+        ttk.Radiobutton(eng_source_row, text="Embedded track", variable=self.english_source_var,
+                       value="embedded", command=self._update_english_source).pack(side=tk.LEFT, padx=(15, 0))
+        ttk.Radiobutton(eng_source_row, text="External file", variable=self.english_source_var,
+                       value="external", command=self._update_english_source).pack(side=tk.LEFT, padx=(15, 0))
+
+        # Embedded track selector (hidden by default)
+        self.english_track_frame = ttk.Frame(english_frame)
+        ttk.Label(self.english_track_frame, text="Track:").pack(side=tk.LEFT)
+        self.english_track_var = tk.StringVar()
+        self.english_track_combo = ttk.Combobox(self.english_track_frame, textvariable=self.english_track_var,
+                                                 width=50, state='readonly')
+        self.english_track_combo.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+
+        # External file input
+        self.english_file_frame = ttk.Frame(english_frame)
+        ttk.Label(self.english_file_frame, text="File:").pack(side=tk.LEFT)
+        self.english_file_var = tk.StringVar()
+        self.english_file_var.trace('w', lambda *args: self._on_english_file_changed())
+        ttk.Entry(self.english_file_frame, textvariable=self.english_file_var, width=50).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(self.english_file_frame, text="Browse...", command=lambda: self._browse_sub_file('english')).pack(side=tk.LEFT, padx=(5, 0))
+        self.english_lang_label = ttk.Label(self.english_file_frame, text="", foreground='#1E90FF', font=('TkDefaultFont', 9, 'bold'))
+        self.english_lang_label.pack(side=tk.LEFT, padx=(5, 0))
 
         # === Options Frame ===
         options_frame = ttk.LabelFrame(tab, text="Options", padding="10")
@@ -444,6 +466,10 @@ class BISSGui:
 
         # Progress indicator
         self.merge_progress = ttk.Progressbar(btn_frame, mode='indeterminate', length=200)
+
+        # Initialize source displays
+        self._update_chinese_source()
+        self._update_english_source()
 
     def _create_shift_tab(self):
         """Create the Shift Timing tab."""
@@ -670,23 +696,6 @@ class BISSGui:
 
     # ==================== Event Handlers ====================
 
-    def _on_file1_changed(self):
-        """Handle file 1 path change."""
-        path = self.merge_file1_var.get().strip()
-        if path and Path(path).exists():
-            lang = self._detect_file_language(Path(path))
-            self.file1_lang_label.config(text=f"[{lang}]" if lang else "")
-        else:
-            self.file1_lang_label.config(text="")
-
-    def _on_file2_changed(self):
-        """Handle file 2 path change."""
-        path = self.merge_file2_var.get().strip()
-        if path and Path(path).exists():
-            lang = self._detect_file_language(Path(path))
-            self.file2_lang_label.config(text=f"[{lang}]" if lang else "")
-        else:
-            self.file2_lang_label.config(text="")
 
     def _on_shift_file_changed(self):
         """Handle shift file path change."""
@@ -718,11 +727,11 @@ class BISSGui:
             return ""
 
     def _swap_merge_files(self):
-        """Swap the two merge input files."""
-        file1 = self.merge_file1_var.get()
-        file2 = self.merge_file2_var.get()
-        self.merge_file1_var.set(file2)
-        self.merge_file2_var.set(file1)
+        """Swap the Chinese and English subtitle files."""
+        chinese = self.chinese_file_var.get()
+        english = self.english_file_var.get()
+        self.chinese_file_var.set(english)
+        self.english_file_var.set(chinese)
 
     def _update_shift_mode(self):
         """Update UI based on shift mode selection."""
@@ -733,44 +742,159 @@ class BISSGui:
             self.offset_frame.pack_forget()
             self.firstline_frame.pack(fill=tk.X, pady=(0, 5))
 
-    def _update_merge_mode(self):
-        """Update UI based on merge mode selection."""
-        if self.merge_mode_var.get() == "files":
-            self.merge_video_frame.pack_forget()
-            self.merge_files_frame.pack(fill=tk.X, pady=(0, 10), after=self.merge_mode_frame)
-        else:
-            self.merge_files_frame.pack_forget()
-            self.merge_video_frame.pack(fill=tk.X, pady=(0, 10), after=self.merge_mode_frame)
+    def _update_chinese_source(self):
+        """Update Chinese subtitle source UI."""
+        source = self.chinese_source_var.get()
+        self.chinese_track_frame.pack_forget()
+        self.chinese_file_frame.pack_forget()
 
-    def _list_tracks(self):
-        """List tracks in selected video."""
+        if source == "embedded":
+            self.chinese_track_frame.pack(fill=tk.X, pady=(5, 0))
+        elif source == "external":
+            self.chinese_file_frame.pack(fill=tk.X, pady=(5, 0))
+        # "auto" shows nothing extra
+
+    def _update_english_source(self):
+        """Update English subtitle source UI."""
+        source = self.english_source_var.get()
+        self.english_track_frame.pack_forget()
+        self.english_file_frame.pack_forget()
+
+        if source == "embedded":
+            self.english_track_frame.pack(fill=tk.X, pady=(5, 0))
+        elif source == "external":
+            self.english_file_frame.pack(fill=tk.X, pady=(5, 0))
+        # "auto" shows nothing extra
+
+    def _on_video_changed(self):
+        """Handle video file selection change."""
+        video_path = self.merge_video_var.get().strip()
+        if video_path and Path(video_path).exists():
+            # Auto-scan for external subtitles
+            self._find_external_subs(Path(video_path))
+
+    def _find_external_subs(self, video_path: Path):
+        """Find external subtitle files next to the video."""
+        self.external_subs_found = []
+        video_dir = video_path.parent
+        video_stem = video_path.stem
+
+        # Look for subtitle files with similar names
+        for ext in ['.srt', '.ass', '.ssa', '.vtt']:
+            for sub_file in video_dir.glob(f"{video_stem}*{ext}"):
+                if sub_file.is_file():
+                    self.external_subs_found.append(sub_file)
+
+        # Update UI to show found subs
+        if self.external_subs_found:
+            sub_names = [f.name for f in self.external_subs_found[:5]]  # Show first 5
+            more = f" (+{len(self.external_subs_found) - 5} more)" if len(self.external_subs_found) > 5 else ""
+            self.tracks_label.config(text=f"External subs found: {', '.join(sub_names)}{more}")
+
+    def _scan_video_tracks(self):
+        """Scan video for embedded subtitle tracks."""
         video_path = self.merge_video_var.get().strip()
         if not video_path:
             messagebox.showerror("Error", "Please select a video file first")
             return
 
-        def do_list():
+        if not Path(video_path).exists():
+            messagebox.showerror("Error", f"File not found: {video_path}")
+            return
+
+        self._set_status("Scanning video tracks...")
+
+        def do_scan():
             try:
                 from core.video_containers import VideoContainerHandler
                 handler = VideoContainerHandler()
                 tracks = handler.list_subtitle_tracks(Path(video_path))
 
-                if not tracks:
-                    self.root.after(0, lambda: messagebox.showinfo("Tracks", "No subtitle tracks found in this video"))
-                    return
+                self.scanned_tracks = tracks
 
-                track_info = "Subtitle tracks found:\n\n"
+                # Build track list for comboboxes
+                track_options = []
+                chinese_tracks = []
+                english_tracks = []
+
                 for t in tracks:
-                    track_info += f"Track {t.track_id}: {t.language or 'Unknown'}"
-                    if t.title:
-                        track_info += f" - {t.title}"
-                    track_info += f" ({t.codec})\n"
+                    lang = t.language or 'Unknown'
+                    title = f" - {t.title}" if t.title else ""
+                    label = f"Track {t.track_id}: {lang}{title} ({t.codec})"
+                    track_options.append((t.track_id, label, lang.lower()))
 
-                self.root.after(0, lambda: messagebox.showinfo("Tracks", track_info))
+                    # Categorize by language
+                    lang_lower = lang.lower()
+                    if any(c in lang_lower for c in ['chi', 'zh', 'cn', 'jpn', 'ja', 'kor', 'ko']):
+                        chinese_tracks.append((t.track_id, label))
+                    elif any(c in lang_lower for c in ['eng', 'en']):
+                        english_tracks.append((t.track_id, label))
+
+                def update_ui():
+                    # Update comboboxes
+                    all_labels = [opt[1] for opt in track_options]
+                    self.chinese_track_combo['values'] = all_labels
+                    self.english_track_combo['values'] = all_labels
+
+                    # Auto-select likely tracks
+                    if chinese_tracks:
+                        self.chinese_track_var.set(chinese_tracks[0][1])
+                    elif all_labels:
+                        self.chinese_track_var.set(all_labels[0])
+
+                    if english_tracks:
+                        self.english_track_var.set(english_tracks[0][1])
+                    elif len(all_labels) > 1:
+                        self.english_track_var.set(all_labels[1])
+                    elif all_labels:
+                        self.english_track_var.set(all_labels[0])
+
+                    # Update status
+                    if tracks:
+                        track_summary = f"Found {len(tracks)} embedded track(s)"
+                        if self.external_subs_found:
+                            track_summary += f", {len(self.external_subs_found)} external file(s)"
+                        self.tracks_label.config(text=track_summary)
+                    else:
+                        self.tracks_label.config(text="No embedded subtitle tracks found")
+
+                    self._set_status("Ready")
+
+                self.root.after(0, update_ui)
+
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to list tracks: {e}"))
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to scan tracks: {e}"))
+                self.root.after(0, lambda: self._set_status("Ready"))
 
-        threading.Thread(target=do_list, daemon=True).start()
+        threading.Thread(target=do_scan, daemon=True).start()
+
+    def _browse_sub_file(self, lang_type: str):
+        """Browse for subtitle file for Chinese or English."""
+        filetypes = [("Subtitle files", "*.srt *.ass *.ssa *.vtt"), ("All files", "*.*")]
+        path = filedialog.askopenfilename(title=f"Select {lang_type.title()} Subtitle", filetypes=filetypes)
+        if path:
+            if lang_type == 'chinese':
+                self.chinese_file_var.set(path)
+            else:
+                self.english_file_var.set(path)
+
+    def _on_chinese_file_changed(self):
+        """Update language label when Chinese file changes."""
+        path = self.chinese_file_var.get().strip()
+        if path and Path(path).exists():
+            lang = self._detect_file_language(Path(path))
+            self.chinese_lang_label.config(text=f"[{lang}]" if lang else "")
+        else:
+            self.chinese_lang_label.config(text="")
+
+    def _on_english_file_changed(self):
+        """Update language label when English file changes."""
+        path = self.english_file_var.get().strip()
+        if path and Path(path).exists():
+            lang = self._detect_file_language(Path(path))
+            self.english_lang_label.config(text=f"[{lang}]" if lang else "")
+        else:
+            self.english_lang_label.config(text="")
 
     # ==================== File Browsers ====================
 
@@ -794,16 +918,6 @@ class BISSGui:
         path = filedialog.askopenfilename(title="Select Subtitle File", filetypes=filetypes)
         if path:
             self.convert_file_var.set(path)
-
-    def _browse_merge_file(self, file_num: int):
-        """Browse for merge input file."""
-        filetypes = [("Subtitle files", "*.srt *.ass *.ssa *.vtt"), ("All files", "*.*")]
-        path = filedialog.askopenfilename(title=f"Select Subtitle File {file_num}", filetypes=filetypes)
-        if path:
-            if file_num == 1:
-                self.merge_file1_var.set(path)
-            else:
-                self.merge_file2_var.set(path)
 
     def _browse_merge_video(self):
         """Browse for video file."""
@@ -830,7 +944,16 @@ class BISSGui:
         filetypes = [("Subtitle files", "*.srt *.ass *.ssa *.vtt"), ("All files", "*.*")]
         path = filedialog.askopenfilename(title="Open Subtitle File", filetypes=filetypes)
         if path:
-            self.merge_file1_var.set(path)
+            # Auto-detect language and assign to appropriate field
+            lang = self._detect_file_language(Path(path))
+            if lang in ['Chinese', 'Japanese', 'Korean']:
+                self.chinese_file_var.set(path)
+                self.chinese_source_var.set("external")
+                self._update_chinese_source()
+            else:
+                self.english_file_var.set(path)
+                self.english_source_var.set("external")
+                self._update_english_source()
             self.notebook.select(0)
 
     def _open_video(self):
@@ -839,8 +962,6 @@ class BISSGui:
         path = filedialog.askopenfilename(title="Open Video File", filetypes=filetypes)
         if path:
             self.merge_video_var.set(path)
-            self.merge_mode_var.set("video")
-            self._update_merge_mode()
             self.notebook.select(0)
 
     # ==================== Operations ====================
@@ -932,31 +1053,70 @@ class BISSGui:
         threading.Thread(target=run_convert, daemon=True).start()
 
     def _execute_merge(self):
-        """Execute the merge operation."""
-        mode = self.merge_mode_var.get()
+        """Execute the merge operation with flexible source selection."""
+        video_path = self.merge_video_var.get().strip()
+        chinese_source = self.chinese_source_var.get()
+        english_source = self.english_source_var.get()
 
-        if mode == "files":
-            file1 = self.merge_file1_var.get().strip()
-            file2 = self.merge_file2_var.get().strip()
+        # Resolve Chinese subtitle source
+        chinese_path = None
+        chinese_track = None
 
-            if not file1 or not file2:
-                messagebox.showerror("Error", "Please select both subtitle files")
+        if chinese_source == "external":
+            chinese_path = self.chinese_file_var.get().strip()
+            if not chinese_path:
+                messagebox.showerror("Error", "Please select a Chinese subtitle file")
+                return
+            if not Path(chinese_path).exists():
+                messagebox.showerror("Error", f"Chinese subtitle not found: {chinese_path}")
+                return
+            chinese_path = Path(chinese_path)
+        elif chinese_source == "embedded":
+            if not video_path:
+                messagebox.showerror("Error", "Please select a video file to use embedded tracks")
+                return
+            track_label = self.chinese_track_var.get()
+            if track_label:
+                # Extract track ID from label "Track X: ..."
+                try:
+                    chinese_track = track_label.split(":")[0].replace("Track", "").strip()
+                except:
+                    pass
+
+        # Resolve English subtitle source
+        english_path = None
+        english_track = None
+
+        if english_source == "external":
+            english_path = self.english_file_var.get().strip()
+            if not english_path:
+                messagebox.showerror("Error", "Please select an English subtitle file")
+                return
+            if not Path(english_path).exists():
+                messagebox.showerror("Error", f"English subtitle not found: {english_path}")
+                return
+            english_path = Path(english_path)
+        elif english_source == "embedded":
+            if not video_path:
+                messagebox.showerror("Error", "Please select a video file to use embedded tracks")
+                return
+            track_label = self.english_track_var.get()
+            if track_label:
+                try:
+                    english_track = track_label.split(":")[0].replace("Track", "").strip()
+                except:
+                    pass
+
+        # Validate we have at least one source specified if not auto
+        if chinese_source == "auto" and english_source == "auto":
+            if not video_path and not chinese_path and not english_path:
+                messagebox.showerror("Error", "Please select a video file or specify subtitle sources")
                 return
 
-            if not Path(file1).exists():
-                messagebox.showerror("Error", f"File not found: {file1}")
-                return
-            if not Path(file2).exists():
-                messagebox.showerror("Error", f"File not found: {file2}")
-                return
-        else:
-            video = self.merge_video_var.get().strip()
-            if not video:
-                messagebox.showerror("Error", "Please select a video file")
-                return
-            if not Path(video).exists():
-                messagebox.showerror("Error", f"File not found: {video}")
-                return
+        # Validate video exists if needed
+        if video_path and not Path(video_path).exists():
+            messagebox.showerror("Error", f"Video file not found: {video_path}")
+            return
 
         output_path = self.merge_output_var.get().strip() or None
         auto_align = self.merge_autoalign_var.get()
@@ -967,7 +1127,6 @@ class BISSGui:
         def run_merge():
             try:
                 from processors.merger import BilingualMerger
-                from core.language_detection import LanguageDetector
 
                 merger = BilingualMerger(
                     auto_align=auto_align,
@@ -975,39 +1134,49 @@ class BISSGui:
                     alignment_threshold=threshold
                 )
 
-                if mode == "files":
-                    file1 = self.merge_file1_var.get().strip()
-                    file2 = self.merge_file2_var.get().strip()
-
-                    # Auto-detect languages
-                    lang1 = LanguageDetector.detect_language_from_filename(file1)
-                    if lang1 == 'unknown':
-                        lang1 = LanguageDetector.detect_subtitle_language(Path(file1))
-
-                    lang2 = LanguageDetector.detect_language_from_filename(file2)
-                    if lang2 == 'unknown':
-                        lang2 = LanguageDetector.detect_subtitle_language(Path(file2))
-
-                    # Assign based on detection
-                    if lang1 in ['zh', 'ja', 'ko']:
-                        chinese_path, english_path = Path(file1), Path(file2)
-                    elif lang2 in ['zh', 'ja', 'ko']:
-                        chinese_path, english_path = Path(file2), Path(file1)
-                    elif lang1 == 'en':
-                        chinese_path, english_path = Path(file2), Path(file1)
-                    else:
-                        chinese_path, english_path = Path(file1), Path(file2)
-
+                # Determine merge approach based on sources
+                if video_path and (chinese_source != "external" or english_source != "external"):
+                    # Use video processing with optional external overrides
+                    success = merger.process_video(
+                        video_path=Path(video_path),
+                        chinese_sub=chinese_path,
+                        english_sub=english_path,
+                        output_format=output_format,
+                        output_path=Path(output_path) if output_path else None,
+                        chinese_track=chinese_track,
+                        english_track=english_track
+                    )
+                elif chinese_path and english_path:
+                    # Direct file merge (both external)
                     success = merger.merge_subtitle_files(
                         chinese_path=chinese_path,
                         english_path=english_path,
                         output_path=Path(output_path) if output_path else None,
                         output_format=output_format
                     )
-                else:
-                    video = self.merge_video_var.get().strip()
+                elif chinese_path or english_path:
+                    # One external file - need video for the other
+                    if not video_path:
+                        self.root.after(0, lambda: messagebox.showerror("Error",
+                            "Need video file to extract missing subtitle track"))
+                        return
+
                     success = merger.process_video(
-                        video_path=Path(video),
+                        video_path=Path(video_path),
+                        chinese_sub=chinese_path,
+                        english_sub=english_path,
+                        output_format=output_format,
+                        output_path=Path(output_path) if output_path else None
+                    )
+                else:
+                    # Full auto - use video
+                    if not video_path:
+                        self.root.after(0, lambda: messagebox.showerror("Error",
+                            "Please select a video or subtitle files"))
+                        return
+
+                    success = merger.process_video(
+                        video_path=Path(video_path),
                         output_format=output_format,
                         output_path=Path(output_path) if output_path else None
                     )
