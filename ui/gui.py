@@ -345,71 +345,100 @@ class BISSGui:
         self.scanned_tracks = []
         self.external_subs_found = []
 
-        # === Track 1 (Top Subtitle) ===
-        chinese_frame = ttk.LabelFrame(tab, text="Track 1 (Top Subtitle)", padding="10")
-        chinese_frame.pack(fill=tk.X, pady=(0, 10))
+        # Languages for auto-detect dropdown
+        self.language_options = ['Any', 'Chinese', 'Japanese', 'Korean', 'English', 'Spanish', 'French', 'German', 'Other']
 
-        # Source selection
-        chi_source_row = ttk.Frame(chinese_frame)
-        chi_source_row.pack(fill=tk.X, pady=(0, 5))
+        # === Track 1 (Top Subtitle) ===
+        track1_frame = ttk.LabelFrame(tab, text="Track 1 (Top Subtitle)", padding="10")
+        track1_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Source selection row
+        t1_source_row = ttk.Frame(track1_frame)
+        t1_source_row.pack(fill=tk.X, pady=(0, 5))
 
         self.chinese_source_var = tk.StringVar(value="auto")
-        ttk.Radiobutton(chi_source_row, text="Auto-detect", variable=self.chinese_source_var,
+        ttk.Radiobutton(t1_source_row, text="Auto-detect", variable=self.chinese_source_var,
                        value="auto", command=self._update_chinese_source).pack(side=tk.LEFT)
-        ttk.Radiobutton(chi_source_row, text="Embedded track", variable=self.chinese_source_var,
+        ttk.Radiobutton(t1_source_row, text="Embedded track", variable=self.chinese_source_var,
                        value="embedded", command=self._update_chinese_source).pack(side=tk.LEFT, padx=(15, 0))
-        ttk.Radiobutton(chi_source_row, text="External file", variable=self.chinese_source_var,
+        ttk.Radiobutton(t1_source_row, text="External file", variable=self.chinese_source_var,
                        value="external", command=self._update_chinese_source).pack(side=tk.LEFT, padx=(15, 0))
 
+        # Auto-detect language selector (shown when auto is selected)
+        self.chinese_auto_frame = ttk.Frame(track1_frame)
+        ttk.Label(self.chinese_auto_frame, text="Look for:").pack(side=tk.LEFT)
+        self.chinese_auto_lang_var = tk.StringVar(value="Chinese")
+        ttk.Combobox(self.chinese_auto_frame, textvariable=self.chinese_auto_lang_var,
+                    values=self.language_options, width=12, state='readonly').pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(self.chinese_auto_frame, text="(will search video tracks and external files)",
+                 style='Subtitle.TLabel').pack(side=tk.LEFT, padx=(10, 0))
+
         # Embedded track selector (hidden by default)
-        self.chinese_track_frame = ttk.Frame(chinese_frame)
+        self.chinese_track_frame = ttk.Frame(track1_frame)
         ttk.Label(self.chinese_track_frame, text="Track:").pack(side=tk.LEFT)
         self.chinese_track_var = tk.StringVar()
         self.chinese_track_combo = ttk.Combobox(self.chinese_track_frame, textvariable=self.chinese_track_var,
-                                                 width=50, state='readonly')
+                                                 width=45, state='readonly')
         self.chinese_track_combo.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(self.chinese_track_frame, text="Preview",
+                  command=lambda: self._preview_embedded_track('chinese')).pack(side=tk.LEFT, padx=(5, 0))
 
         # External file input
-        self.chinese_file_frame = ttk.Frame(chinese_frame)
+        self.chinese_file_frame = ttk.Frame(track1_frame)
         ttk.Label(self.chinese_file_frame, text="File:").pack(side=tk.LEFT)
         self.chinese_file_var = tk.StringVar()
         self.chinese_file_var.trace('w', lambda *args: self._on_chinese_file_changed())
-        ttk.Entry(self.chinese_file_frame, textvariable=self.chinese_file_var, width=50).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Entry(self.chinese_file_frame, textvariable=self.chinese_file_var, width=40).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
         ttk.Button(self.chinese_file_frame, text="Browse...", command=lambda: self._browse_sub_file('chinese')).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(self.chinese_file_frame, text="Preview",
+                  command=lambda: self._show_subtitle_preview(self.chinese_file_var.get())).pack(side=tk.LEFT, padx=(5, 0))
         self.chinese_lang_label = ttk.Label(self.chinese_file_frame, text="", foreground='#1E90FF', font=('TkDefaultFont', 9, 'bold'))
         self.chinese_lang_label.pack(side=tk.LEFT, padx=(5, 0))
 
         # === Track 2 (Bottom Subtitle) ===
-        english_frame = ttk.LabelFrame(tab, text="Track 2 (Bottom Subtitle)", padding="10")
-        english_frame.pack(fill=tk.X, pady=(0, 10))
+        track2_frame = ttk.LabelFrame(tab, text="Track 2 (Bottom Subtitle)", padding="10")
+        track2_frame.pack(fill=tk.X, pady=(0, 10))
 
-        # Source selection
-        eng_source_row = ttk.Frame(english_frame)
-        eng_source_row.pack(fill=tk.X, pady=(0, 5))
+        # Source selection row
+        t2_source_row = ttk.Frame(track2_frame)
+        t2_source_row.pack(fill=tk.X, pady=(0, 5))
 
         self.english_source_var = tk.StringVar(value="auto")
-        ttk.Radiobutton(eng_source_row, text="Auto-detect", variable=self.english_source_var,
+        ttk.Radiobutton(t2_source_row, text="Auto-detect", variable=self.english_source_var,
                        value="auto", command=self._update_english_source).pack(side=tk.LEFT)
-        ttk.Radiobutton(eng_source_row, text="Embedded track", variable=self.english_source_var,
+        ttk.Radiobutton(t2_source_row, text="Embedded track", variable=self.english_source_var,
                        value="embedded", command=self._update_english_source).pack(side=tk.LEFT, padx=(15, 0))
-        ttk.Radiobutton(eng_source_row, text="External file", variable=self.english_source_var,
+        ttk.Radiobutton(t2_source_row, text="External file", variable=self.english_source_var,
                        value="external", command=self._update_english_source).pack(side=tk.LEFT, padx=(15, 0))
 
+        # Auto-detect language selector (shown when auto is selected)
+        self.english_auto_frame = ttk.Frame(track2_frame)
+        ttk.Label(self.english_auto_frame, text="Look for:").pack(side=tk.LEFT)
+        self.english_auto_lang_var = tk.StringVar(value="English")
+        ttk.Combobox(self.english_auto_frame, textvariable=self.english_auto_lang_var,
+                    values=self.language_options, width=12, state='readonly').pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(self.english_auto_frame, text="(will search video tracks and external files)",
+                 style='Subtitle.TLabel').pack(side=tk.LEFT, padx=(10, 0))
+
         # Embedded track selector (hidden by default)
-        self.english_track_frame = ttk.Frame(english_frame)
+        self.english_track_frame = ttk.Frame(track2_frame)
         ttk.Label(self.english_track_frame, text="Track:").pack(side=tk.LEFT)
         self.english_track_var = tk.StringVar()
         self.english_track_combo = ttk.Combobox(self.english_track_frame, textvariable=self.english_track_var,
-                                                 width=50, state='readonly')
+                                                 width=45, state='readonly')
         self.english_track_combo.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(self.english_track_frame, text="Preview",
+                  command=lambda: self._preview_embedded_track('english')).pack(side=tk.LEFT, padx=(5, 0))
 
         # External file input
-        self.english_file_frame = ttk.Frame(english_frame)
+        self.english_file_frame = ttk.Frame(track2_frame)
         ttk.Label(self.english_file_frame, text="File:").pack(side=tk.LEFT)
         self.english_file_var = tk.StringVar()
         self.english_file_var.trace('w', lambda *args: self._on_english_file_changed())
-        ttk.Entry(self.english_file_frame, textvariable=self.english_file_var, width=50).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Entry(self.english_file_frame, textvariable=self.english_file_var, width=40).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
         ttk.Button(self.english_file_frame, text="Browse...", command=lambda: self._browse_sub_file('english')).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(self.english_file_frame, text="Preview",
+                  command=lambda: self._show_subtitle_preview(self.english_file_var.get())).pack(side=tk.LEFT, padx=(5, 0))
         self.english_lang_label = ttk.Label(self.english_file_frame, text="", foreground='#1E90FF', font=('TkDefaultFont', 9, 'bold'))
         self.english_lang_label.pack(side=tk.LEFT, padx=(5, 0))
 
@@ -741,11 +770,34 @@ class BISSGui:
             return ""
 
     def _swap_merge_files(self):
-        """Swap the Chinese and English subtitle files."""
-        chinese = self.chinese_file_var.get()
-        english = self.english_file_var.get()
-        self.chinese_file_var.set(english)
-        self.english_file_var.set(chinese)
+        """Swap all settings between Track 1 and Track 2."""
+        # Swap source type
+        source1 = self.chinese_source_var.get()
+        source2 = self.english_source_var.get()
+        self.chinese_source_var.set(source2)
+        self.english_source_var.set(source1)
+
+        # Swap auto-detect language preference
+        lang1 = self.chinese_auto_lang_var.get()
+        lang2 = self.english_auto_lang_var.get()
+        self.chinese_auto_lang_var.set(lang2)
+        self.english_auto_lang_var.set(lang1)
+
+        # Swap embedded track selection
+        track1 = self.chinese_track_var.get()
+        track2 = self.english_track_var.get()
+        self.chinese_track_var.set(track2)
+        self.english_track_var.set(track1)
+
+        # Swap external file paths
+        file1 = self.chinese_file_var.get()
+        file2 = self.english_file_var.get()
+        self.chinese_file_var.set(file2)
+        self.english_file_var.set(file1)
+
+        # Update UI to reflect changes
+        self._update_chinese_source()
+        self._update_english_source()
 
     def _update_shift_mode(self):
         """Update UI based on shift mode selection."""
@@ -757,35 +809,41 @@ class BISSGui:
             self.firstline_frame.pack(fill=tk.X, pady=(0, 5))
 
     def _update_chinese_source(self):
-        """Update Chinese subtitle source UI."""
+        """Update Track 1 subtitle source UI."""
         source = self.chinese_source_var.get()
+        self.chinese_auto_frame.pack_forget()
         self.chinese_track_frame.pack_forget()
         self.chinese_file_frame.pack_forget()
 
-        if source == "embedded":
+        if source == "auto":
+            self.chinese_auto_frame.pack(fill=tk.X, pady=(5, 0))
+        elif source == "embedded":
             self.chinese_track_frame.pack(fill=tk.X, pady=(5, 0))
         elif source == "external":
             self.chinese_file_frame.pack(fill=tk.X, pady=(5, 0))
-        # "auto" shows nothing extra
 
     def _update_english_source(self):
-        """Update English subtitle source UI."""
+        """Update Track 2 subtitle source UI."""
         source = self.english_source_var.get()
+        self.english_auto_frame.pack_forget()
         self.english_track_frame.pack_forget()
         self.english_file_frame.pack_forget()
 
-        if source == "embedded":
+        if source == "auto":
+            self.english_auto_frame.pack(fill=tk.X, pady=(5, 0))
+        elif source == "embedded":
             self.english_track_frame.pack(fill=tk.X, pady=(5, 0))
         elif source == "external":
             self.english_file_frame.pack(fill=tk.X, pady=(5, 0))
-        # "auto" shows nothing extra
 
     def _on_video_changed(self):
-        """Handle video file selection change."""
+        """Handle video file selection change - auto-scan tracks."""
         video_path = self.merge_video_var.get().strip()
         if video_path and Path(video_path).exists():
             # Auto-scan for external subtitles
             self._find_external_subs(Path(video_path))
+            # Auto-scan embedded tracks
+            self._scan_video_tracks()
 
     def _find_external_subs(self, video_path: Path):
         """Find external subtitle files next to the video."""
@@ -893,7 +951,7 @@ class BISSGui:
                 self.english_file_var.set(path)
 
     def _on_chinese_file_changed(self):
-        """Update language label when Chinese file changes."""
+        """Update language label when Track 1 file changes."""
         path = self.chinese_file_var.get().strip()
         if path and Path(path).exists():
             lang = self._detect_file_language(Path(path))
@@ -902,13 +960,66 @@ class BISSGui:
             self.chinese_lang_label.config(text="")
 
     def _on_english_file_changed(self):
-        """Update language label when English file changes."""
+        """Update language label when Track 2 file changes."""
         path = self.english_file_var.get().strip()
         if path and Path(path).exists():
             lang = self._detect_file_language(Path(path))
             self.english_lang_label.config(text=f"[{lang}]" if lang else "")
         else:
             self.english_lang_label.config(text="")
+
+    def _preview_embedded_track(self, track_type: str):
+        """Preview an embedded subtitle track by extracting and showing it."""
+        video_path = self.merge_video_var.get().strip()
+        if not video_path or not Path(video_path).exists():
+            messagebox.showerror("Error", "Please select a video file first")
+            return
+
+        if track_type == 'chinese':
+            track_label = self.chinese_track_var.get()
+        else:
+            track_label = self.english_track_var.get()
+
+        if not track_label:
+            messagebox.showerror("Error", "Please select a track first")
+            return
+
+        # Extract track ID from label "Track X: ..."
+        try:
+            track_id = track_label.split(":")[0].replace("Track", "").strip()
+        except:
+            messagebox.showerror("Error", "Could not parse track ID")
+            return
+
+        self._set_status(f"Extracting track {track_id} for preview...")
+
+        def do_extract():
+            try:
+                import tempfile
+                from core.video_containers import VideoContainerHandler
+
+                handler = VideoContainerHandler()
+                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp:
+                    tmp_path = Path(tmp.name)
+
+                # Extract the track
+                success = handler.extract_subtitle_track(
+                    video_path=Path(video_path),
+                    track_id=track_id,
+                    output_path=tmp_path
+                )
+
+                if success and tmp_path.exists():
+                    self.root.after(0, lambda: self._show_subtitle_preview(str(tmp_path)))
+                else:
+                    self.root.after(0, lambda: messagebox.showerror("Error", "Failed to extract track"))
+
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Preview failed: {e}"))
+            finally:
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        threading.Thread(target=do_extract, daemon=True).start()
 
     # ==================== File Browsers ====================
 
@@ -1072,17 +1183,17 @@ class BISSGui:
         chinese_source = self.chinese_source_var.get()
         english_source = self.english_source_var.get()
 
-        # Resolve Chinese subtitle source
+        # Resolve Track 1 subtitle source
         chinese_path = None
         chinese_track = None
 
         if chinese_source == "external":
             chinese_path = self.chinese_file_var.get().strip()
             if not chinese_path:
-                messagebox.showerror("Error", "Please select a Chinese subtitle file")
+                messagebox.showerror("Error", "Please select a subtitle file for Track 1")
                 return
             if not Path(chinese_path).exists():
-                messagebox.showerror("Error", f"Chinese subtitle not found: {chinese_path}")
+                messagebox.showerror("Error", f"Track 1 subtitle not found: {chinese_path}")
                 return
             chinese_path = Path(chinese_path)
         elif chinese_source == "embedded":
@@ -1097,17 +1208,17 @@ class BISSGui:
                 except:
                     pass
 
-        # Resolve English subtitle source
+        # Resolve Track 2 subtitle source
         english_path = None
         english_track = None
 
         if english_source == "external":
             english_path = self.english_file_var.get().strip()
             if not english_path:
-                messagebox.showerror("Error", "Please select an English subtitle file")
+                messagebox.showerror("Error", "Please select a subtitle file for Track 2")
                 return
             if not Path(english_path).exists():
-                messagebox.showerror("Error", f"English subtitle not found: {english_path}")
+                messagebox.showerror("Error", f"Track 2 subtitle not found: {english_path}")
                 return
             english_path = Path(english_path)
         elif english_source == "embedded":
