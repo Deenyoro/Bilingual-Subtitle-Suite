@@ -131,9 +131,15 @@ For detailed help on any command:
         # PGS conversion commands
         self._add_pgs_parsers(subparsers)
 
+        # ASS to SRT conversion command
+        self._add_ass_convert_parser(subparsers)
+
+        # Extract command (mkvextract integration)
+        self._add_extract_parser(subparsers)
+
         # Interactive command
         self._add_interactive_parser(subparsers)
-        
+
         return parser
     
     def _add_merge_parser(self, subparsers):
@@ -415,6 +421,61 @@ The tool auto-detects subtitle languages from:
         batch_realign_parser.add_argument('--no-backup', action='store_true',
                                         help='Do not create backups')
 
+    def _add_ass_convert_parser(self, subparsers):
+        """Add ASS to SRT conversion command parser."""
+        ass_convert_parser = subparsers.add_parser(
+            'convert-ass',
+            help='Convert ASS/SSA subtitles to SRT format',
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description='''Convert ASS/SSA subtitle files to SRT format.
+
+This command converts Advanced SubStation Alpha (ASS/SSA) subtitle files
+to the simpler SRT format, with special handling for bilingual subtitles.
+
+FEATURES:
+  - Preserves bilingual structure (CJK text on top, English below)
+  - Removes ASS formatting codes and effects
+  - Handles various character encodings automatically
+  - Supports batch conversion of multiple files
+
+USAGE:
+  # Convert a single file
+  biss convert-ass subtitle.ass
+
+  # Convert with custom output name
+  biss convert-ass subtitle.ass -o output.srt
+
+  # Batch convert all ASS files in a directory
+  biss convert-ass *.ass
+  biss convert-ass /path/to/subtitles/ -r
+
+BILINGUAL HANDLING:
+  ASS files often contain bilingual subtitles with Chinese/Japanese/Korean
+  text followed by English translation. This converter preserves that
+  structure in the SRT output.
+
+  Example ASS text:
+    你好世界\\N{\\fnArial}Hello World
+
+  Becomes SRT text:
+    你好世界
+    Hello World
+'''
+        )
+
+        ass_convert_parser.add_argument('input', type=Path, nargs='+',
+                                       help='ASS/SSA file(s) or directory to convert')
+        ass_convert_parser.add_argument('-o', '--output', type=Path,
+                                       help='Output file path (for single file) or directory (for batch)')
+        ass_convert_parser.add_argument('-r', '--recursive', action='store_true',
+                                       help='Process directories recursively')
+        ass_convert_parser.add_argument('--no-bilingual', action='store_true',
+                                       help='Do not preserve bilingual structure')
+        ass_convert_parser.add_argument('--keep-effects', action='store_true',
+                                       help='Keep ASS formatting effects (not recommended for SRT)')
+        ass_convert_parser.add_argument('--preview', action='store_true',
+                                       help='Preview conversion without writing files')
+
     def _add_pgs_parsers(self, subparsers):
         """Add PGS conversion command parsers."""
         # Convert PGS
@@ -463,6 +524,50 @@ The tool auto-detects subtitle languages from:
                                        default=['eng', 'chi_sim', 'chi_tra'],
                                        help='OCR languages to install')
     
+    def _add_extract_parser(self, subparsers):
+        """Add extract command parser for mkvextract integration."""
+        extract_parser = subparsers.add_parser(
+            'extract',
+            help='Extract subtitle tracks from MKV files (uses mkvextract)',
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description='''Extract subtitle tracks from MKV video files using mkvextract.
+
+This is much faster than ffmpeg for MKV files and allows extracting
+multiple tracks in a single command.
+
+USAGE:
+  # List all tracks in an MKV file
+  biss extract movie.mkv --list
+
+  # Extract specific tracks by ID
+  biss extract movie.mkv --tracks 3 42
+
+  # Extract with custom output names
+  biss extract movie.mkv --tracks 3:english.srt 42:chinese.srt
+
+  # Extract all subtitle tracks
+  biss extract movie.mkv --all
+
+FINDING TRACK IDs:
+  Use --list to see all tracks with their IDs. The ID shown is the one
+  to use with --tracks. Track IDs are typically 0-based.
+
+NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
+'''
+        )
+
+        extract_parser.add_argument('input', type=Path, help='MKV video file')
+        extract_parser.add_argument('--list', '-l', action='store_true',
+                                   help='List all tracks and exit')
+        extract_parser.add_argument('--tracks', '-t', nargs='+',
+                                   help='Track IDs to extract (e.g., "3" or "3:output.srt")')
+        extract_parser.add_argument('--all', '-a', action='store_true',
+                                   help='Extract all subtitle tracks')
+        extract_parser.add_argument('--output-dir', '-o', type=Path,
+                                   help='Output directory (default: same as input)')
+        extract_parser.add_argument('--lang', nargs='+',
+                                   help='Extract tracks matching these language codes (e.g., eng chi jpn)')
+
     def _add_interactive_parser(self, subparsers):
         """Add interactive command parser."""
         interactive_parser = subparsers.add_parser(
@@ -517,12 +622,16 @@ The tool auto-detects subtitle languages from:
                 return self._handle_cleanup_backups(args)
             elif args.command == 'batch-realign':
                 return self._handle_batch_realign(args)
+            elif args.command == 'convert-ass':
+                return self._handle_convert_ass(args)
             elif args.command == 'convert-pgs':
                 return self._handle_convert_pgs(args)
             elif args.command == 'batch-convert-pgs':
                 return self._handle_batch_convert_pgs(args)
             elif args.command == 'setup-pgsrip':
                 return self._handle_setup_pgsrip(args)
+            elif args.command == 'extract':
+                return self._handle_extract(args)
             elif args.command == 'interactive':
                 return self._handle_interactive(args)
             elif args.command == 'gui':
@@ -1040,6 +1149,110 @@ The tool auto-detects subtitle languages from:
         print(self.batch_processor.get_processing_summary(results))
         return 0 if results['failed'] == 0 else 1
 
+    def _handle_convert_ass(self, args) -> int:
+        """Handle convert-ass command for ASS/SSA to SRT conversion."""
+        from core.ass_converter import ASSToSRTConverter
+
+        # Collect input files
+        input_files = []
+
+        for input_path in args.input:
+            if input_path.is_dir():
+                # Process directory
+                pattern = '**/*.ass' if args.recursive else '*.ass'
+                input_files.extend(input_path.glob(pattern))
+                pattern = '**/*.ssa' if args.recursive else '*.ssa'
+                input_files.extend(input_path.glob(pattern))
+            elif input_path.exists():
+                if input_path.suffix.lower() in ['.ass', '.ssa']:
+                    input_files.append(input_path)
+                else:
+                    logger.warning(f"Skipping non-ASS file: {input_path}")
+            else:
+                logger.warning(f"File not found: {input_path}")
+
+        if not input_files:
+            logger.error("No ASS/SSA files found to convert")
+            return 1
+
+        # Create converter with options
+        converter = ASSToSRTConverter(
+            strip_effects=not getattr(args, 'keep_effects', False),
+            preserve_bilingual=not getattr(args, 'no_bilingual', False)
+        )
+
+        # Preview mode
+        if getattr(args, 'preview', False):
+            print("\n" + "=" * 60)
+            print("CONVERSION PREVIEW")
+            print("=" * 60)
+
+            for input_file in input_files[:3]:  # Preview first 3 files
+                print(f"\n--- {input_file.name} ---")
+                try:
+                    preview = converter.get_preview(input_file, max_entries=5)
+                    for entry in preview:
+                        print(f"[{entry['start']} --> {entry['end']}]")
+                        # Indent text lines for readability
+                        for line in entry['text'].split('\n'):
+                            print(f"  {line}")
+                        print()
+                except Exception as e:
+                    print(f"  Error: {e}")
+
+            if len(input_files) > 3:
+                print(f"\n... and {len(input_files) - 3} more files")
+
+            print("\n[PREVIEW MODE] No files were written.")
+            return 0
+
+        # Dry-run mode (from global --dry-run flag)
+        if getattr(args, 'dry_run', False):
+            print("\n[DRY RUN] Would convert the following files:")
+            for input_file in input_files:
+                output_file = input_file.with_suffix('.srt')
+                print(f"  {input_file} -> {output_file}")
+            print("\n[DRY RUN] No changes made.")
+            return 0
+
+        # Convert files
+        successful = 0
+        failed = 0
+
+        # Determine output path
+        output_path = getattr(args, 'output', None)
+
+        for input_file in input_files:
+            try:
+                # Determine output for this file
+                if output_path:
+                    if output_path.is_dir():
+                        output_file = output_path / input_file.with_suffix('.srt').name
+                    elif len(input_files) == 1:
+                        output_file = output_path
+                    else:
+                        output_file = output_path / input_file.with_suffix('.srt').name
+                else:
+                    output_file = input_file.with_suffix('.srt')
+
+                result_path = converter.convert_file(input_file, output_file)
+                print(f"Converted: {input_file.name} -> {result_path.name}")
+                successful += 1
+
+            except Exception as e:
+                logger.error(f"Failed to convert {input_file.name}: {e}")
+                failed += 1
+
+        # Print summary
+        print(f"\n{'='*60}")
+        print(f"ASS TO SRT CONVERSION SUMMARY")
+        print(f"{'='*60}")
+        print(f"Total files: {len(input_files)}")
+        print(f"Successfully converted: {successful}")
+        print(f"Failed: {failed}")
+
+        return 0 if failed == 0 else 1
+
     def _handle_convert_pgs(self, args) -> int:
         """Handle convert-pgs command."""
         if not self.pgsrip_wrapper:
@@ -1253,6 +1466,236 @@ The tool auto-detects subtitle languages from:
             print()
 
         return 0
+
+    def _handle_extract(self, args) -> int:
+        """Handle extract command using mkvextract."""
+        import subprocess
+
+        video_path = args.input
+
+        if not video_path.exists():
+            logger.error(f"File not found: {video_path}")
+            return 1
+
+        if video_path.suffix.lower() != '.mkv':
+            logger.error("Extract command only supports MKV files")
+            return 1
+
+        # Check if MKVToolNix is available (both mkvextract and mkvinfo)
+        missing_tools = []
+        for tool in ['mkvextract', 'mkvinfo']:
+            try:
+                result = subprocess.run([tool, '--version'],
+                                       capture_output=True, timeout=5)
+                if result.returncode != 0:
+                    missing_tools.append(tool)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                missing_tools.append(tool)
+
+        if missing_tools:
+            logger.error(f"MKVToolNix not found (missing: {', '.join(missing_tools)})")
+            print("\n" + "=" * 60)
+            print("  MKVToolNix is required for the 'extract' command")
+            print("=" * 60)
+            print("\nPlease install MKVToolNix:")
+            print("  - Windows: https://mkvtoolnix.download/downloads.html#windows")
+            print("  - macOS:   brew install mkvtoolnix")
+            print("  - Linux:   sudo apt install mkvtoolnix (Debian/Ubuntu)")
+            print("             sudo dnf install mkvtoolnix (Fedora)")
+            print("\nAfter installation, ensure mkvextract and mkvinfo are in your PATH.")
+            print("=" * 60 + "\n")
+            return 1
+
+        # Get track info using mkvinfo
+        try:
+            result = subprocess.run(['mkvinfo', str(video_path)],
+                                   capture_output=True, timeout=60)
+            # Decode with utf-8, ignoring errors for non-UTF8 characters
+            mkvinfo_output = result.stdout.decode('utf-8', errors='replace')
+        except subprocess.TimeoutExpired:
+            logger.error("mkvinfo timed out - the file may be too large or corrupted")
+            return 1
+        except subprocess.SubprocessError as e:
+            logger.error(f"Failed to get track info: {e}")
+            return 1
+
+        # Parse tracks from mkvinfo output
+        tracks = self._parse_mkvinfo_tracks(mkvinfo_output)
+
+        if args.list:
+            # List tracks and exit
+            print(f"\nTracks in {video_path.name}:")
+            print("=" * 70)
+            print(f"{'ID':<4} {'Type':<10} {'Language':<8} {'Codec':<15} {'Name'}")
+            print("-" * 70)
+
+            for track in tracks:
+                # Safely encode name for console output
+                name = track.get('name', '')
+                try:
+                    # Try to print as-is
+                    print(f"{track['id']:<4} {track['type']:<10} {track['language']:<8} "
+                          f"{track['codec']:<15} {name}")
+                except UnicodeEncodeError:
+                    # Fall back to ASCII-safe representation
+                    safe_name = name.encode('ascii', errors='replace').decode('ascii')
+                    print(f"{track['id']:<4} {track['type']:<10} {track['language']:<8} "
+                          f"{track['codec']:<15} {safe_name}")
+
+            print()
+            print("To extract tracks, use:")
+            print(f"  biss extract \"{video_path}\" --tracks <id> [<id>...]")
+            print(f"  biss extract \"{video_path}\" --tracks <id>:output.srt")
+            return 0
+
+        # Determine which tracks to extract
+        subtitle_tracks = [t for t in tracks if t['type'] == 'subtitles']
+
+        if not subtitle_tracks:
+            logger.error("No subtitle tracks found in file")
+            return 1
+
+        tracks_to_extract = []
+
+        if args.all:
+            # Extract all subtitle tracks
+            tracks_to_extract = [(t['id'], None) for t in subtitle_tracks]
+        elif args.lang:
+            # Extract tracks matching language codes
+            lang_codes = set(l.lower() for l in args.lang)
+            for track in subtitle_tracks:
+                if track['language'].lower() in lang_codes:
+                    tracks_to_extract.append((track['id'], None))
+            if not tracks_to_extract:
+                logger.error(f"No tracks found matching languages: {args.lang}")
+                return 1
+        elif args.tracks:
+            # Extract specific tracks
+            for spec in args.tracks:
+                if ':' in spec:
+                    track_id, output_name = spec.split(':', 1)
+                    tracks_to_extract.append((track_id, output_name))
+                else:
+                    tracks_to_extract.append((spec, None))
+        else:
+            logger.error("Please specify --list, --all, --lang, or --tracks")
+            return 1
+
+        # Determine output directory
+        output_dir = args.output_dir if args.output_dir else video_path.parent
+
+        # Build mkvextract command
+        extract_args = []
+        for track_id, output_name in tracks_to_extract:
+            # Find track info
+            track_info = next((t for t in tracks if str(t['id']) == str(track_id)), None)
+
+            if not track_info:
+                logger.warning(f"Track {track_id} not found, skipping")
+                continue
+
+            if output_name:
+                output_path = output_dir / output_name
+            else:
+                # Generate output filename
+                ext = '.srt' if track_info['codec'].lower() in ['subrip', 's_text/utf8'] else '.ass'
+                lang = track_info['language'] if track_info['language'] else f"track{track_id}"
+                output_path = output_dir / f"{video_path.stem}.{lang}.{track_id}{ext}"
+
+            extract_args.append(f"{track_id}:{output_path}")
+
+        if not extract_args:
+            logger.error("No valid tracks to extract")
+            return 1
+
+        # Run mkvextract
+        cmd = ['mkvextract', str(video_path), 'tracks'] + extract_args
+
+        logger.info(f"Extracting {len(extract_args)} track(s)...")
+        if args.debug:
+            logger.debug(f"Command: {' '.join(cmd)}")
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+            if result.returncode == 0:
+                logger.info("Extraction completed successfully!")
+                for arg in extract_args:
+                    track_id, output = arg.split(':', 1)
+                    print(f"  Track {track_id} -> {output}")
+                return 0
+            else:
+                logger.error(f"Extraction failed: {result.stderr}")
+                return 1
+
+        except subprocess.TimeoutExpired:
+            logger.error("Extraction timed out")
+            return 1
+        except Exception as e:
+            logger.error(f"Extraction failed: {e}")
+            return 1
+
+    def _parse_mkvinfo_tracks(self, mkvinfo_output: str) -> list:
+        """Parse track information from mkvinfo output."""
+        import re
+
+        tracks = []
+        current_track = None
+
+        for line in mkvinfo_output.split('\n'):
+            # Track number line
+            match = re.search(r'Track number: \d+ \(track ID for mkvmerge & mkvextract: (\d+)\)', line)
+            if match:
+                if current_track:
+                    tracks.append(current_track)
+                current_track = {
+                    'id': int(match.group(1)),
+                    'type': 'unknown',
+                    'language': '',
+                    'codec': '',
+                    'name': ''
+                }
+                continue
+
+            if current_track is None:
+                continue
+
+            # Track type
+            if 'Track type:' in line:
+                if 'video' in line.lower():
+                    current_track['type'] = 'video'
+                elif 'audio' in line.lower():
+                    current_track['type'] = 'audio'
+                elif 'subtitle' in line.lower():
+                    current_track['type'] = 'subtitles'
+
+            # Language (prefer IETF BCP 47)
+            if 'Language (IETF BCP 47):' in line:
+                match = re.search(r'Language \(IETF BCP 47\): (\S+)', line)
+                if match:
+                    current_track['language'] = match.group(1)
+            elif 'Language:' in line and not current_track['language']:
+                match = re.search(r'Language: (\S+)', line)
+                if match:
+                    current_track['language'] = match.group(1)
+
+            # Codec ID
+            if 'Codec ID:' in line:
+                match = re.search(r'Codec ID: (\S+)', line)
+                if match:
+                    current_track['codec'] = match.group(1)
+
+            # Track name
+            if '+ Name:' in line:
+                match = re.search(r'\+ Name: (.+)', line)
+                if match:
+                    current_track['name'] = match.group(1).strip()
+
+        # Don't forget the last track
+        if current_track:
+            tracks.append(current_track)
+
+        return tracks
 
 
 def main():
