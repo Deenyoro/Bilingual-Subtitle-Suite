@@ -267,10 +267,11 @@ class BISSGui:
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Tools", menu=tools_menu)
         tools_menu.add_command(label="Merge Subtitles", command=lambda: self.notebook.select(0))
-        tools_menu.add_command(label="Shift Timing", command=lambda: self.notebook.select(1))
-        tools_menu.add_command(label="Convert Encoding", command=lambda: self.notebook.select(2))
+        tools_menu.add_command(label="Extract Tracks", command=lambda: self.notebook.select(1))
+        tools_menu.add_command(label="Shift Timing", command=lambda: self.notebook.select(2))
+        tools_menu.add_command(label="Convert Encoding", command=lambda: self.notebook.select(3))
         tools_menu.add_separator()
-        tools_menu.add_command(label="Batch Operations", command=lambda: self.notebook.select(3))
+        tools_menu.add_command(label="Batch Operations", command=lambda: self.notebook.select(4))
 
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -292,6 +293,7 @@ class BISSGui:
 
         # Create tabs (Merge first as primary function)
         self._create_merge_tab()
+        self._create_extract_tab()
         self._create_shift_tab()
         self._create_convert_tab()
         self._create_batch_tab()
@@ -507,12 +509,350 @@ class BISSGui:
                                     command=self._execute_merge, style='Big.TButton')
         self.merge_btn.pack(side=tk.RIGHT)
 
-        # Progress indicator
-        self.merge_progress = ttk.Progressbar(btn_frame, mode='indeterminate', length=200)
+        # Progress indicator (determinate mode for real progress)
+        self.merge_progress = ttk.Progressbar(btn_frame, mode='determinate', length=200, maximum=100)
+        self.merge_progress_label = ttk.Label(btn_frame, text="", style='Subtitle.TLabel')
 
         # Initialize source displays
         self._update_chinese_source()
         self._update_english_source()
+
+    def _create_extract_tab(self):
+        """Create the Extract Tracks tab for mkvextract."""
+        tab = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(tab, text="  Extract Tracks  ")
+
+        # Intro
+        ttk.Label(tab, text="Extract subtitle tracks from MKV files using mkvextract (fast)",
+                 style='Subtitle.TLabel').pack(anchor='w', pady=(0, 10))
+
+        # File selection
+        file_frame = ttk.LabelFrame(tab, text="MKV Video File", padding="10")
+        file_frame.pack(fill=tk.X, pady=(0, 10))
+
+        file_row = ttk.Frame(file_frame)
+        file_row.pack(fill=tk.X)
+        self.extract_file_var = tk.StringVar()
+        ttk.Entry(file_row, textvariable=self.extract_file_var, width=55).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(file_row, text="Browse...", command=self._browse_extract_file).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(file_row, text="Load Tracks", command=self._load_extract_tracks).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Track list
+        tracks_frame = ttk.LabelFrame(tab, text="Subtitle Tracks", padding="10")
+        tracks_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        # Treeview for tracks
+        columns = ('id', 'language', 'codec', 'name')
+        self.extract_tree = ttk.Treeview(tracks_frame, columns=columns, show='headings', height=8,
+                                         selectmode='extended')
+        self.extract_tree.heading('id', text='ID')
+        self.extract_tree.heading('language', text='Language')
+        self.extract_tree.heading('codec', text='Codec')
+        self.extract_tree.heading('name', text='Name')
+
+        self.extract_tree.column('id', width=40, anchor='center')
+        self.extract_tree.column('language', width=80, anchor='center')
+        self.extract_tree.column('codec', width=120, anchor='w')
+        self.extract_tree.column('name', width=200, anchor='w')
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(tracks_frame, orient=tk.VERTICAL, command=self.extract_tree.yview)
+        self.extract_tree.configure(yscrollcommand=scrollbar.set)
+
+        self.extract_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Output options
+        output_frame = ttk.LabelFrame(tab, text="Output Options", padding="10")
+        output_frame.pack(fill=tk.X, pady=(0, 10))
+
+        out_row = ttk.Frame(output_frame)
+        out_row.pack(fill=tk.X)
+        ttk.Label(out_row, text="Output Directory:").pack(side=tk.LEFT)
+        self.extract_output_var = tk.StringVar()
+        ttk.Entry(out_row, textvariable=self.extract_output_var, width=45).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(out_row, text="Browse...", command=self._browse_extract_output).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(out_row, text="(empty = same as video)", style='Subtitle.TLabel').pack(side=tk.LEFT, padx=(5, 0))
+
+        # Action buttons
+        btn_frame = ttk.Frame(tab)
+        btn_frame.pack(fill=tk.X, pady=(5, 0))
+
+        ttk.Button(btn_frame, text="Select All", command=self._extract_select_all).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="Select None", command=self._extract_select_none).pack(side=tk.LEFT, padx=(0, 5))
+
+        self.extract_btn = ttk.Button(btn_frame, text="Extract Selected",
+                                      command=self._execute_extract, style='Big.TButton')
+        self.extract_btn.pack(side=tk.RIGHT)
+
+        # Progress indicator
+        self.extract_progress = ttk.Progressbar(btn_frame, mode='indeterminate', length=150)
+        self.extract_progress_label = ttk.Label(btn_frame, text="", style='Subtitle.TLabel')
+
+        # Store tracks data
+        self._extract_tracks = []
+
+    def _browse_extract_file(self):
+        """Browse for MKV file to extract from."""
+        filename = filedialog.askopenfilename(
+            title="Select MKV Video",
+            filetypes=[("MKV files", "*.mkv"), ("All files", "*.*")]
+        )
+        if filename:
+            self.extract_file_var.set(filename)
+            self._load_extract_tracks()
+
+    def _browse_extract_output(self):
+        """Browse for output directory."""
+        dirname = filedialog.askdirectory(title="Select Output Directory")
+        if dirname:
+            self.extract_output_var.set(dirname)
+
+    def _check_mkvtoolnix_available(self) -> tuple:
+        """Check if MKVToolNix tools are available.
+
+        Returns:
+            (available, missing_tools) tuple
+        """
+        import subprocess
+        missing = []
+        for tool in ['mkvextract', 'mkvinfo']:
+            try:
+                result = subprocess.run([tool, '--version'],
+                                       capture_output=True, timeout=5)
+                if result.returncode != 0:
+                    missing.append(tool)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                missing.append(tool)
+        return (len(missing) == 0, missing)
+
+    def _show_mkvtoolnix_missing_dialog(self):
+        """Show dialog about missing MKVToolNix."""
+        msg = """MKVToolNix is required for the Extract Tracks feature.
+
+Please install MKVToolNix:
+
+Windows:
+  Download from https://mkvtoolnix.download/downloads.html#windows
+
+macOS:
+  brew install mkvtoolnix
+
+Linux (Debian/Ubuntu):
+  sudo apt install mkvtoolnix
+
+Linux (Fedora):
+  sudo dnf install mkvtoolnix
+
+After installation, restart this application."""
+
+        messagebox.showerror("MKVToolNix Not Found", msg)
+
+    def _load_extract_tracks(self):
+        """Load tracks from MKV file using mkvinfo."""
+        import subprocess
+        import re
+
+        # Check if MKVToolNix is available first
+        available, missing = self._check_mkvtoolnix_available()
+        if not available:
+            self._show_mkvtoolnix_missing_dialog()
+            return
+
+        video_path = self.extract_file_var.get().strip()
+        if not video_path:
+            messagebox.showerror("Error", "Please select an MKV file")
+            return
+
+        if not video_path.lower().endswith('.mkv'):
+            messagebox.showerror("Error", "Only MKV files are supported for extraction")
+            return
+
+        # Clear existing tracks
+        for item in self.extract_tree.get_children():
+            self.extract_tree.delete(item)
+        self._extract_tracks = []
+
+        self._set_status("Loading tracks...")
+
+        def load_tracks():
+            try:
+                # Run mkvinfo
+                result = subprocess.run(['mkvinfo', video_path],
+                                       capture_output=True, timeout=60)
+                output = result.stdout.decode('utf-8', errors='replace')
+
+                tracks = []
+                current_track = None
+
+                for line in output.split('\n'):
+                    # Track number line
+                    match = re.search(r'Track number: \d+ \(track ID for mkvmerge & mkvextract: (\d+)\)', line)
+                    if match:
+                        if current_track:
+                            tracks.append(current_track)
+                        current_track = {
+                            'id': int(match.group(1)),
+                            'type': 'unknown',
+                            'language': '',
+                            'codec': '',
+                            'name': ''
+                        }
+                        continue
+
+                    if current_track is None:
+                        continue
+
+                    # Track type
+                    if 'Track type:' in line:
+                        if 'video' in line.lower():
+                            current_track['type'] = 'video'
+                        elif 'audio' in line.lower():
+                            current_track['type'] = 'audio'
+                        elif 'subtitle' in line.lower():
+                            current_track['type'] = 'subtitles'
+
+                    # Language
+                    if 'Language (IETF BCP 47):' in line:
+                        match = re.search(r'Language \(IETF BCP 47\): (\S+)', line)
+                        if match:
+                            current_track['language'] = match.group(1)
+                    elif 'Language:' in line and not current_track['language']:
+                        match = re.search(r'Language: (\S+)', line)
+                        if match:
+                            current_track['language'] = match.group(1)
+
+                    # Codec ID
+                    if 'Codec ID:' in line:
+                        match = re.search(r'Codec ID: (\S+)', line)
+                        if match:
+                            current_track['codec'] = match.group(1)
+
+                    # Track name
+                    if '+ Name:' in line:
+                        match = re.search(r'\+ Name: (.+)', line)
+                        if match:
+                            current_track['name'] = match.group(1).strip()
+
+                if current_track:
+                    tracks.append(current_track)
+
+                # Filter to subtitle tracks only
+                subtitle_tracks = [t for t in tracks if t['type'] == 'subtitles']
+
+                # Update UI in main thread
+                def update_ui():
+                    self._extract_tracks = subtitle_tracks
+                    for track in subtitle_tracks:
+                        self.extract_tree.insert('', 'end', values=(
+                            track['id'],
+                            track['language'],
+                            track['codec'],
+                            track['name']
+                        ))
+                    self._set_status(f"Loaded {len(subtitle_tracks)} subtitle tracks")
+
+                self.root.after(0, update_ui)
+
+            except FileNotFoundError:
+                self.root.after(0, self._show_mkvtoolnix_missing_dialog)
+                self.root.after(0, lambda: self._set_status("Ready"))
+            except subprocess.TimeoutExpired:
+                self.root.after(0, lambda: messagebox.showerror("Error",
+                    "mkvinfo timed out - the file may be too large or corrupted"))
+                self.root.after(0, lambda: self._set_status("Ready"))
+            except Exception as e:
+                self.root.after(0, lambda err=str(e): messagebox.showerror("Error",
+                    f"Failed to load tracks: {err}"))
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        threading.Thread(target=load_tracks, daemon=True).start()
+
+    def _extract_select_all(self):
+        """Select all tracks in the tree."""
+        for item in self.extract_tree.get_children():
+            self.extract_tree.selection_add(item)
+
+    def _extract_select_none(self):
+        """Deselect all tracks in the tree."""
+        self.extract_tree.selection_remove(*self.extract_tree.get_children())
+
+    def _execute_extract(self):
+        """Execute extraction of selected tracks."""
+        import subprocess
+
+        # Check if MKVToolNix is available
+        available, missing = self._check_mkvtoolnix_available()
+        if not available:
+            self._show_mkvtoolnix_missing_dialog()
+            return
+
+        video_path = self.extract_file_var.get().strip()
+        if not video_path:
+            messagebox.showerror("Error", "Please select an MKV file")
+            return
+
+        selected = self.extract_tree.selection()
+        if not selected:
+            messagebox.showerror("Error", "Please select tracks to extract")
+            return
+
+        output_dir = self.extract_output_var.get().strip()
+        if not output_dir:
+            output_dir = str(Path(video_path).parent)
+
+        # Build extraction args
+        video_stem = Path(video_path).stem
+        extract_args = []
+
+        for item in selected:
+            values = self.extract_tree.item(item, 'values')
+            track_id = values[0]
+            lang = values[1] if values[1] else f"track{track_id}"
+            codec = values[2].lower()
+
+            # Determine extension
+            ext = '.srt' if 's_text' in codec or 'subrip' in codec else '.ass'
+            output_file = Path(output_dir) / f"{video_stem}.{lang}.{track_id}{ext}"
+
+            extract_args.append(f"{track_id}:{output_file}")
+
+        # Show progress
+        self._set_status("Extracting tracks...")
+        self.extract_btn.config(state='disabled')
+        self.extract_progress_label.pack(side=tk.LEFT, padx=(0, 5))
+        self.extract_progress.pack(side=tk.LEFT, padx=(0, 10))
+        self.extract_progress.start(10)
+
+        def run_extract():
+            try:
+                cmd = ['mkvextract', video_path, 'tracks'] + extract_args
+                logger.info(f"Running: mkvextract with {len(extract_args)} tracks")
+
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+                if result.returncode == 0:
+                    self.root.after(0, lambda: messagebox.showinfo("Success",
+                        f"Extracted {len(extract_args)} track(s) successfully!"))
+                    for arg in extract_args:
+                        track_id, output = arg.split(':', 1)
+                        logger.info(f"  Track {track_id} -> {output}")
+                else:
+                    self.root.after(0, lambda: messagebox.showerror("Error",
+                        f"Extraction failed: {result.stderr}"))
+
+            except subprocess.TimeoutExpired:
+                self.root.after(0, lambda: messagebox.showerror("Error", "Extraction timed out"))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Extraction failed: {e}"))
+            finally:
+                self.root.after(0, lambda: self.extract_btn.config(state='normal'))
+                self.root.after(0, lambda: self.extract_progress.stop())
+                self.root.after(0, lambda: self.extract_progress.pack_forget())
+                self.root.after(0, lambda: self.extract_progress_label.pack_forget())
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        threading.Thread(target=run_extract, daemon=True).start()
 
     def _create_shift_tab(self):
         """Create the Shift Timing tab."""
@@ -609,13 +949,25 @@ class BISSGui:
                   style='Big.TButton').pack(side=tk.RIGHT)
 
     def _create_convert_tab(self):
-        """Create the Convert Encoding tab."""
+        """Create the Convert/Format tab."""
         tab = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(tab, text="  Convert Encoding  ")
+        self.notebook.add(tab, text="  Convert  ")
 
         # Intro
-        ttk.Label(tab, text="Fix garbled characters by converting subtitle encoding to UTF-8",
+        ttk.Label(tab, text="Convert subtitle encoding or format (ASS to SRT)",
                  style='Subtitle.TLabel').pack(anchor='w', pady=(0, 10))
+
+        # Conversion type selection
+        type_frame = ttk.LabelFrame(tab, text="Conversion Type", padding="10")
+        type_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.convert_type_var = tk.StringVar(value="encoding")
+        ttk.Radiobutton(type_frame, text="Encoding conversion (fix garbled characters)",
+                       variable=self.convert_type_var, value="encoding",
+                       command=self._update_convert_type).pack(anchor='w')
+        ttk.Radiobutton(type_frame, text="ASS/SSA to SRT (convert format, preserve bilingual)",
+                       variable=self.convert_type_var, value="ass_to_srt",
+                       command=self._update_convert_type).pack(anchor='w')
 
         # File selection
         file_frame = ttk.LabelFrame(tab, text="Subtitle File", padding="10")
@@ -625,28 +977,30 @@ class BISSGui:
         file_row.pack(fill=tk.X)
         self.convert_file_var = tk.StringVar()
         self.convert_file_var.trace('w', lambda *args: self._on_convert_file_changed())
-        ttk.Entry(file_row, textvariable=self.convert_file_var, width=65).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Entry(file_row, textvariable=self.convert_file_var, width=55).pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(file_row, text="Browse...", command=self._browse_convert_file).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(file_row, text="Preview",
+                  command=lambda: self._show_subtitle_preview(self.convert_file_var.get())).pack(side=tk.LEFT, padx=(5, 0))
 
         # Info panel
         self.convert_info_panel = SubtitleInfoPanel(file_frame, "File Info")
         self.convert_info_panel.pack(fill=tk.X, pady=(10, 0))
 
+        # === Encoding conversion options (shown by default) ===
+        self.encoding_options_frame = ttk.LabelFrame(tab, text="Encoding Options", padding="10")
+        self.encoding_options_frame.pack(fill=tk.X, pady=(0, 10))
+
         # Encoding detection display
-        detect_frame = ttk.LabelFrame(tab, text="Detected Encoding", padding="10")
-        detect_frame.pack(fill=tk.X, pady=(0, 10))
+        detect_row = ttk.Frame(self.encoding_options_frame)
+        detect_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(detect_row, text="Detected encoding:").pack(side=tk.LEFT)
+        self.detected_encoding_var = tk.StringVar(value="Select a file")
+        self.encoding_label = ttk.Label(detect_row, textvariable=self.detected_encoding_var,
+                                        font=('TkDefaultFont', 10, 'bold'), foreground='#1E90FF')
+        self.encoding_label.pack(side=tk.LEFT, padx=(5, 0))
 
-        self.detected_encoding_var = tk.StringVar(value="Select a file to detect encoding")
-        self.encoding_label = ttk.Label(detect_frame, textvariable=self.detected_encoding_var,
-                                        font=('TkDefaultFont', 11, 'bold'))
-        self.encoding_label.pack(anchor='w')
-
-        # Convert options
-        options_frame = ttk.LabelFrame(tab, text="Conversion Options", padding="10")
-        options_frame.pack(fill=tk.X, pady=(0, 10))
-
-        enc_frame = ttk.Frame(options_frame)
-        enc_frame.pack(fill=tk.X, pady=(0, 5))
+        enc_frame = ttk.Frame(self.encoding_options_frame)
+        enc_frame.pack(fill=tk.X, pady=(5, 5))
         ttk.Label(enc_frame, text="Target encoding:").pack(side=tk.LEFT)
         self.convert_encoding_var = tk.StringVar(value="utf-8")
         enc_combo = ttk.Combobox(enc_frame, textvariable=self.convert_encoding_var, width=15,
@@ -654,18 +1008,38 @@ class BISSGui:
         enc_combo.pack(side=tk.LEFT, padx=(5, 0))
 
         self.convert_backup_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_frame, text="Create backup of original file",
+        ttk.Checkbutton(self.encoding_options_frame, text="Create backup of original file",
                        variable=self.convert_backup_var).pack(anchor='w')
 
         self.convert_force_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(options_frame, text="Force conversion even if already target encoding",
+        ttk.Checkbutton(self.encoding_options_frame, text="Force conversion even if already target encoding",
                        variable=self.convert_force_var).pack(anchor='w')
+
+        # === ASS to SRT options (hidden by default) ===
+        self.ass_options_frame = ttk.LabelFrame(tab, text="ASS to SRT Options", padding="10")
+
+        self.ass_bilingual_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.ass_options_frame, text="Preserve bilingual structure (CJK on top, English below)",
+                       variable=self.ass_bilingual_var).pack(anchor='w')
+
+        self.ass_strip_effects_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.ass_options_frame, text="Remove ASS formatting effects",
+                       variable=self.ass_strip_effects_var).pack(anchor='w')
+
+        # Output path for ASS conversion
+        out_row = ttk.Frame(self.ass_options_frame)
+        out_row.pack(fill=tk.X, pady=(10, 0))
+        ttk.Label(out_row, text="Output file:").pack(side=tk.LEFT)
+        self.ass_output_var = tk.StringVar()
+        ttk.Entry(out_row, textvariable=self.ass_output_var, width=45).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(out_row, text="Browse...", command=self._browse_ass_output).pack(side=tk.LEFT, padx=(5, 0))
 
         # Execute button
         btn_frame = ttk.Frame(tab)
         btn_frame.pack(fill=tk.X, pady=(10, 0))
-        ttk.Button(btn_frame, text="Convert Encoding", command=self._execute_convert,
-                  style='Big.TButton').pack(side=tk.RIGHT)
+        self.convert_btn = ttk.Button(btn_frame, text="Convert Encoding", command=self._execute_convert,
+                                      style='Big.TButton')
+        self.convert_btn.pack(side=tk.RIGHT)
 
     def _create_batch_tab(self):
         """Create the Batch Operations tab."""
@@ -754,9 +1128,93 @@ class BISSGui:
         if path and Path(path).exists():
             self.convert_info_panel.update_info(Path(path))
             self._detect_encoding()
+
+            # Auto-set output path for ASS conversion
+            if path.lower().endswith(('.ass', '.ssa')):
+                self.ass_output_var.set(str(Path(path).with_suffix('.srt')))
         else:
             self.convert_info_panel.update_info(None)
-            self.detected_encoding_var.set("Select a file to detect encoding")
+            self.detected_encoding_var.set("Select a file")
+
+    def _update_convert_type(self):
+        """Update UI based on conversion type selection."""
+        conv_type = self.convert_type_var.get()
+
+        if conv_type == "encoding":
+            self.ass_options_frame.pack_forget()
+            self.encoding_options_frame.pack(fill=tk.X, pady=(0, 10))
+            self.convert_btn.config(text="Convert Encoding", command=self._execute_convert)
+        else:  # ass_to_srt
+            self.encoding_options_frame.pack_forget()
+            self.ass_options_frame.pack(fill=tk.X, pady=(0, 10))
+            self.convert_btn.config(text="Convert ASS to SRT", command=self._execute_ass_convert)
+
+    def _browse_ass_output(self):
+        """Browse for ASS conversion output file."""
+        initial_file = self.ass_output_var.get()
+        if initial_file:
+            initial_dir = str(Path(initial_file).parent)
+            initial_name = Path(initial_file).name
+        else:
+            initial_dir = ""
+            initial_name = ""
+
+        file_path = filedialog.asksaveasfilename(
+            title="Save SRT file as",
+            initialdir=initial_dir,
+            initialfile=initial_name,
+            defaultextension=".srt",
+            filetypes=[("SRT files", "*.srt"), ("All files", "*.*")]
+        )
+
+        if file_path:
+            self.ass_output_var.set(file_path)
+
+    def _execute_ass_convert(self):
+        """Execute ASS to SRT conversion."""
+        input_path = self.convert_file_var.get().strip()
+        output_path = self.ass_output_var.get().strip()
+
+        if not input_path:
+            messagebox.showerror("Error", "Please select an ASS/SSA file to convert")
+            return
+
+        if not Path(input_path).exists():
+            messagebox.showerror("Error", f"File not found: {input_path}")
+            return
+
+        if not input_path.lower().endswith(('.ass', '.ssa')):
+            messagebox.showerror("Error", "Selected file is not an ASS/SSA file")
+            return
+
+        if not output_path:
+            output_path = str(Path(input_path).with_suffix('.srt'))
+
+        self._set_status("Converting ASS to SRT...")
+        self.convert_btn.config(state='disabled')
+
+        def do_convert():
+            try:
+                from core.ass_converter import ASSToSRTConverter
+
+                converter = ASSToSRTConverter(
+                    strip_effects=self.ass_strip_effects_var.get(),
+                    preserve_bilingual=self.ass_bilingual_var.get()
+                )
+
+                result_path = converter.convert_file(Path(input_path), Path(output_path))
+
+                self.root.after(0, lambda: messagebox.showinfo("Success",
+                    f"Converted successfully!\n\nOutput: {result_path.name}"))
+
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error",
+                    f"Conversion failed: {e}"))
+            finally:
+                self.root.after(0, lambda: self.convert_btn.config(state='normal'))
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        threading.Thread(target=do_convert, daemon=True).start()
 
     def _detect_file_language(self, path: Path) -> str:
         """Detect language of a subtitle file."""
@@ -1250,15 +1708,25 @@ class BISSGui:
         output_format = self.merge_format_var.get()
         top_language = self.merge_top_var.get()
 
+        def update_progress(step_name: str, current: int, total: int):
+            """Update progress bar and label from merger callback."""
+            if total > 0:
+                percent = int((current / total) * 100)
+                self.root.after(0, lambda: self.merge_progress.configure(value=percent))
+            self.root.after(0, lambda s=step_name: self.merge_progress_label.configure(text=s))
+            self.root.after(0, lambda s=step_name: self._set_status(f"Merging: {s}"))
+
         def run_merge():
             try:
+                logger.info(f"Starting merge operation for: {video_path or 'external files'}")
                 from processors.merger import BilingualMerger
 
                 merger = BilingualMerger(
                     auto_align=auto_align,
                     use_translation=use_translation,
                     alignment_threshold=threshold,
-                    top_language=top_language
+                    top_language=top_language,
+                    progress_callback=update_progress
                 )
 
                 # Determine merge approach based on sources
@@ -1275,12 +1743,15 @@ class BISSGui:
                     )
                 elif chinese_path and english_path:
                     # Direct file merge (both external)
+                    update_progress("Merging subtitles", 1, 2)
                     success = merger.merge_subtitle_files(
                         chinese_path=chinese_path,
                         english_path=english_path,
                         output_path=Path(output_path) if output_path else None,
                         output_format=output_format
                     )
+                    if success:
+                        update_progress("Complete", 2, 2)
                 elif chinese_path or english_path:
                     # One external file - need video for the other
                     if not video_path:
@@ -1314,12 +1785,29 @@ class BISSGui:
                     self.root.after(0, lambda: messagebox.showerror("Error", "Merge failed - check log for details"))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Merge failed: {str(e)}"))
+                logger.error(f"Merge failed with exception: {e}", exc_info=True)
+                self.root.after(0, lambda err=str(e): messagebox.showerror("Error", f"Merge failed: {err}"))
             finally:
                 self.root.after(0, lambda: self._set_status("Ready"))
 
-        self._set_status("Merging subtitles...")
-        threading.Thread(target=run_merge, daemon=True).start()
+        # Show progress and disable button
+        self._set_status("Merging: Starting...")
+        self.merge_btn.config(state='disabled')
+        self.merge_progress_label.pack(side=tk.LEFT, padx=(0, 5))
+        self.merge_progress.pack(side=tk.LEFT, padx=(0, 10))
+        self.merge_progress.configure(value=0)
+
+        def run_merge_with_cleanup():
+            try:
+                run_merge()
+            finally:
+                # Re-enable button and hide progress
+                self.root.after(0, lambda: self.merge_btn.config(state='normal'))
+                self.root.after(0, lambda: self.merge_progress.pack_forget())
+                self.root.after(0, lambda: self.merge_progress_label.pack_forget())
+                self.root.after(0, lambda: self.merge_progress.configure(value=0))
+
+        threading.Thread(target=run_merge_with_cleanup, daemon=True).start()
 
     def _execute_batch(self):
         """Execute batch operation."""
