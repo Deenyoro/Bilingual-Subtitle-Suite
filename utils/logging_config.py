@@ -6,10 +6,24 @@ different log levels, and proper formatting for both console and file output.
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
 from .constants import DEFAULT_LOG_FORMAT, DEFAULT_LOG_DATE_FORMAT
+
+
+def get_log_level_from_env() -> int:
+    """Get log level from BISS_LOG_LEVEL environment variable."""
+    level_name = os.environ.get('BISS_LOG_LEVEL', 'INFO').upper()
+    level_map = {
+        'DEBUG': logging.DEBUG,
+        'INFO': logging.INFO,
+        'WARNING': logging.WARNING,
+        'ERROR': logging.ERROR,
+        'CRITICAL': logging.CRITICAL,
+    }
+    return level_map.get(level_name, logging.INFO)
 
 
 class ColoredFormatter(logging.Formatter):
