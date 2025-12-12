@@ -6,7 +6,7 @@ into a single bilingual track with intelligent timing optimization.
 """
 
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Callable
 from core.subtitle_formats import SubtitleEvent, SubtitleFile, SubtitleFormatFactory
 from core.video_containers import VideoContainerHandler
 from core.language_detection import LanguageDetector
@@ -30,7 +30,8 @@ class BilingualMerger:
                  reference_language_preference: str = 'auto',
                  force_pgs: bool = False, no_pgs: bool = False,
                  enable_mixed_realignment: bool = False,
-                 top_language: str = 'first'):
+                 top_language: str = 'first',
+                 progress_callback: Optional[Callable[[str, int, int], None]] = None):
         """
         Initialize the bilingual merger.
 
@@ -47,6 +48,7 @@ class BilingualMerger:
             no_pgs: Disable PGS auto-activation
             enable_mixed_realignment: Enable enhanced realignment for mixed embedded+external tracks
             top_language: Which subtitle appears on top ('first', 'second') - first is the primary/foreign language
+            progress_callback: Optional callback function(step_name, current, total) for progress updates
         """
         # Validate alignment threshold
         if not 0.0 <= alignment_threshold <= 1.0:
@@ -71,6 +73,7 @@ class BilingualMerger:
 
         self.video_handler = VideoContainerHandler()
         self.pgsrip_wrapper = get_pgsrip_wrapper() if not no_pgs else None
+        self.progress_callback = progress_callback
 
         # Initialize track info storage (prevents AttributeError when checking hasattr)
         self._track1_info = {'source_type': 'unknown', 'language': 'unknown'}
@@ -91,6 +94,14 @@ class BilingualMerger:
                    f"use_translation={use_translation}, manual_align={manual_align}, "
                    f"sync_strategy={sync_strategy}, reference_preference={reference_language_preference}, "
                    f"threshold={alignment_threshold}, top_language={top_language}")
+
+    def _report_progress(self, step_name: str, current: int = 0, total: int = 0):
+        """Report progress to callback if available."""
+        if self.progress_callback:
+            try:
+                self.progress_callback(step_name, current, total)
+            except Exception as e:
+                logger.debug(f"Progress callback error: {e}")
 
     def _combine_texts(self, text1: str, text2: str) -> str:
         """
@@ -243,6 +254,7 @@ class BilingualMerger:
             >>> success = merger.process_video(Path("movie.mkv"))
         """
         logger.info(f"Processing video: {video_path.name}")
+        self._report_progress("Starting", 0, 5)
 
         # Store video path for timing restoration
         self._current_video_path = video_path
@@ -260,6 +272,7 @@ class BilingualMerger:
             self._track2_info = {'source_type': 'unknown', 'language': 'unknown'}
 
             # Find/Extract Chinese subtitles
+            self._report_progress("Finding Chinese subtitle", 1, 5)
             if not chinese_sub:
                 chinese_sub, chinese_source_type = self._find_or_extract_subtitle_with_info(
                     video_path, is_chinese=True, prefer_external=prefer_external,
@@ -281,6 +294,7 @@ class BilingualMerger:
                 }
 
             # Find/Extract English subtitles
+            self._report_progress("Finding English subtitle", 2, 5)
             if not english_sub:
                 english_sub, english_source_type = self._find_or_extract_subtitle_with_info(
                     video_path, is_chinese=False, prefer_external=prefer_external,
@@ -300,25 +314,31 @@ class BilingualMerger:
                     'language': 'english',
                     'path': str(english_sub)
                 }
-            
+
             # Check if we have at least one subtitle
             if not chinese_sub and not english_sub:
                 logger.error("No Chinese or English subtitles found!")
                 return False
-            
+
             if not chinese_sub:
                 logger.warning("No Chinese subtitles found. Output will contain English only.")
             if not english_sub:
                 logger.warning("No English subtitles found. Output will contain Chinese only.")
-            
+
             # Determine output path with dynamic language detection
+            self._report_progress("Merging subtitles", 3, 5)
             if not output_path:
                 lang1, lang2 = self._detect_subtitle_languages(chinese_sub, english_sub)
                 output_path = self._generate_output_filename(video_path, lang1, lang2, output_format)
-            
+
             # Merge subtitles
             success = self.merge_subtitle_files(chinese_sub, english_sub, output_path, output_format)
-            
+
+            self._report_progress("Writing output", 4, 5)
+
+            if success:
+                self._report_progress("Complete", 5, 5)
+
             return success
             
         finally:

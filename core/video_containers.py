@@ -159,9 +159,18 @@ class VideoContainerHandler:
         
         if probe_data and 'streams' in probe_data:
             tracks = []
+            subtitle_index = 0
+            
+            # For MKV files, get the mkvextract track IDs
+            mkv_track_mapping = {}
+            if video_path.suffix.lower() == '.mkv':
+                mkv_track_mapping = VideoContainerHandler._get_mkvinfo_track_mapping(video_path)
             
             for stream in probe_data['streams']:
                 if stream.get('codec_type') == 'subtitle':
+                    # Get mkvextract track ID if available
+                    mkv_track_id = mkv_track_mapping.get(subtitle_index, '')
+                    
                     track = SubtitleTrack(
                         track_id=str(stream['index']),
                         codec=stream.get('codec_name', 'unknown'),
@@ -169,9 +178,11 @@ class VideoContainerHandler:
                         title=stream.get('tags', {}).get('title', ''),
                         is_default=stream.get('disposition', {}).get('default', 0) == 1,
                         is_forced=stream.get('disposition', {}).get('forced', 0) == 1,
-                        ffmpeg_index=f"0:{stream['index']}"
+                        ffmpeg_index=f"0:{stream['index']}",
+                        mkvextract_track_id=mkv_track_id
                     )
                     tracks.append(track)
+                    subtitle_index += 1
             
             logger.info(f"Found {len(tracks)} subtitle tracks")
             return tracks
@@ -235,6 +246,110 @@ class VideoContainerHandler:
         return tracks
 
     @staticmethod
+    def _get_mkvinfo_track_mapping(video_path: Path) -> dict:
+        """
+        Get mapping of subtitle track indices to mkvextract track IDs using mkvinfo.
+        
+        Args:
+            video_path: Path to the MKV file
+            
+        Returns:
+            Dict mapping track language+index to mkvextract track ID
+        """
+        try:
+            result = subprocess.run(
+                ['mkvinfo', str(video_path)],
+                capture_output=True,
+                timeout=60
+            )
+            if result.returncode != 0:
+                return {}
+            
+            mkvinfo_output = result.stdout.decode('utf-8', errors='replace')
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return {}
+        
+        # Parse mkvinfo output to get track IDs for subtitle tracks
+        # Returns dict: {subtitle_index: mkvextract_track_id}
+        track_mapping = {}
+        current_track_id = None
+        subtitle_count = 0
+        
+        for line in mkvinfo_output.split('\n'):
+            # Look for track ID line
+            match = re.search(r'Track number: \d+ \(track ID for mkvmerge & mkvextract: (\d+)\)', line)
+            if match:
+                current_track_id = match.group(1)
+            
+            # Look for track type
+            if current_track_id and 'Track type: subtitles' in line:
+                track_mapping[subtitle_count] = current_track_id
+                subtitle_count += 1
+                current_track_id = None
+        
+        logger.debug(f"mkvinfo track mapping: {track_mapping}")
+        return track_mapping
+
+    @staticmethod
+    def _check_mkvextract_available() -> bool:
+        """Check if mkvextract is available on the system."""
+        try:
+            result = subprocess.run(
+                ["mkvextract", "--version"],
+                capture_output=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return False
+
+    @staticmethod
+    def _extract_with_mkvextract(video_path: Path, track: SubtitleTrack,
+                                  output_path: Path) -> Optional[Path]:
+        """
+        Extract subtitle using mkvextract (much faster for MKV files).
+
+        Args:
+            video_path: Path to the MKV file
+            track: SubtitleTrack to extract
+            output_path: Output path for subtitle
+
+        Returns:
+            Path to extracted subtitle or None if failed
+        """
+        # Use mkvextract_track_id if available, otherwise try track_id
+        mkv_track_id = track.mkvextract_track_id if track.mkvextract_track_id else track.track_id
+        logger.debug(f"Using mkvextract for fast extraction of track {mkv_track_id}")
+
+        cmd = [
+            "mkvextract", str(video_path),
+            "tracks", f"{mkv_track_id}:{output_path}"
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes should be plenty
+            )
+
+            if result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
+                logger.info(f"Successfully extracted subtitle to {output_path.name} (using mkvextract)")
+                return output_path
+            else:
+                if result.stderr:
+                    logger.debug(f"mkvextract stderr: {result.stderr}")
+                return None
+
+        except subprocess.TimeoutExpired:
+            logger.warning("mkvextract timed out")
+            return None
+        except Exception as e:
+            logger.debug(f"mkvextract failed: {e}")
+            return None
+
+    @staticmethod
     def extract_subtitle_track(video_path: Path, track: SubtitleTrack,
                               output_path: Path) -> Optional[Path]:
         """
@@ -255,7 +370,6 @@ class VideoContainerHandler:
         """
         logger.info(f"Extracting subtitle track {track.track_id} ({track.language}) "
                    f"to {output_path.name}")
-        logger.info("This may take several minutes for large video files. Please be patient...")
 
         # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -263,20 +377,31 @@ class VideoContainerHandler:
         # Determine output format from extension
         output_ext = output_path.suffix.lower()
 
+        # Determine appropriate extension based on codec
+        if track.codec.lower() in ['subrip', 'srt']:
+            copy_ext = '.srt'
+        elif track.codec.lower() in ['ass', 'ssa']:
+            copy_ext = '.ass'
+        elif track.codec.lower() in ['webvtt', 'vtt']:
+            copy_ext = '.vtt'
+        else:
+            copy_ext = '.srt'  # Default fallback
+
+        # Adjust output path if needed
+        if output_ext != copy_ext:
+            output_path = output_path.with_suffix(copy_ext)
+
+        # For MKV files, try mkvextract first (much faster)
+        if video_path.suffix.lower() == '.mkv' and VideoContainerHandler._check_mkvextract_available():
+            result = VideoContainerHandler._extract_with_mkvextract(video_path, track, output_path)
+            if result:
+                return result
+            logger.debug("mkvextract failed, falling back to ffmpeg")
+
+        # Fallback to ffmpeg
+        logger.info("Using ffmpeg for extraction (this may take a while for large files)...")
+
         with tempfile.TemporaryDirectory() as tmp_dir:
-            # First, try direct stream copy (fastest and most reliable)
-            logger.debug(f"Attempting direct stream copy for track {track.track_id}")
-
-            # Determine appropriate extension based on codec
-            if track.codec.lower() in ['subrip', 'srt']:
-                copy_ext = '.srt'
-            elif track.codec.lower() in ['ass', 'ssa']:
-                copy_ext = '.ass'
-            elif track.codec.lower() in ['webvtt', 'vtt']:
-                copy_ext = '.vtt'
-            else:
-                copy_ext = '.srt'  # Default fallback
-
             tmp_path = Path(tmp_dir) / f"subtitle{copy_ext}"
 
             # CRITICAL: Do NOT use -avoid_negative_ts make_zero as it shifts timing to start from 0
@@ -293,19 +418,10 @@ class VideoContainerHandler:
             result = VideoContainerHandler.run_command(cmd, timeout=900)
 
             if result.returncode == 0 and tmp_path.exists() and tmp_path.stat().st_size > 0:
-                # Determine final output path
-                final_output = output_path
-                if output_ext and output_ext != copy_ext:
-                    # If user requested specific format, keep it
-                    final_output = output_path
-                else:
-                    # Use the format that worked
-                    final_output = output_path.with_suffix(copy_ext)
-
                 try:
-                    shutil.copy2(tmp_path, final_output)
-                    logger.info(f"Successfully extracted subtitle to {final_output.name}")
-                    return final_output
+                    shutil.copy2(tmp_path, output_path)
+                    logger.info(f"Successfully extracted subtitle to {output_path.name}")
+                    return output_path
                 except Exception as e:
                     logger.error(f"Failed to copy extracted subtitle: {e}")
                     return None

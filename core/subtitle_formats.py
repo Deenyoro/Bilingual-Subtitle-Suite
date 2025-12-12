@@ -63,8 +63,9 @@ class SubtitleTrack:
     title: str = ""
     is_default: bool = False
     is_forced: bool = False
-    ffmpeg_index: str = ""  # FFmpeg stream specifier
-    
+    ffmpeg_index: str = ""  # FFmpeg stream specifier (e.g., "0:3")
+    mkvextract_track_id: str = ""  # Track ID for mkvextract (different from ffmpeg index)
+
     def __str__(self) -> str:
         """String representation of the track."""
         parts = [f"Track {self.track_id}"]

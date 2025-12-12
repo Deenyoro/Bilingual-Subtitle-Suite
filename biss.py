@@ -41,6 +41,17 @@ import sys
 import argparse
 from pathlib import Path
 from typing import List, Optional
+import io
+
+# Fix Windows console encoding issues with emoji/unicode characters
+# This prevents 'charmap' codec errors when printing Unicode characters
+if sys.platform == 'win32':
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(errors='replace')
+        sys.stderr.reconfigure(errors='replace')
+    else:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, errors='replace')
 
 # Add the current directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent))
