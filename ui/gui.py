@@ -294,6 +294,7 @@ class BISSGui:
         # Create tabs (Merge first as primary function)
         self._create_merge_tab()
         self._create_extract_tab()
+        self._create_split_tab()
         self._create_shift_tab()
         self._create_convert_tab()
         self._create_batch_tab()
@@ -853,6 +854,187 @@ After installation, restart this application."""
                 self.root.after(0, lambda: self._set_status("Ready"))
 
         threading.Thread(target=run_extract, daemon=True).start()
+
+    def _create_split_tab(self):
+        """Create the Split Bilingual Subtitles tab."""
+        tab = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(tab, text="  Split Bilingual  ")
+
+        # Intro
+        ttk.Label(tab, text="Split bilingual subtitles into separate language files",
+                 style='Subtitle.TLabel').pack(anchor='w', pady=(0, 10))
+
+        # File selection
+        file_frame = ttk.LabelFrame(tab, text="Bilingual Subtitle File", padding="10")
+        file_frame.pack(fill=tk.X, pady=(0, 10))
+
+        file_row = ttk.Frame(file_frame)
+        file_row.pack(fill=tk.X)
+        self.split_file_var = tk.StringVar()
+        self.split_file_var.trace('w', lambda *args: self._on_split_file_changed())
+        ttk.Entry(file_row, textvariable=self.split_file_var, width=55).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(file_row, text="Browse...", command=self._browse_split_file).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(file_row, text="Preview",
+                  command=lambda: self._show_subtitle_preview(self.split_file_var.get())).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Info panel
+        self.split_info_panel = SubtitleInfoPanel(file_frame, "File Info")
+        self.split_info_panel.pack(fill=tk.X, pady=(10, 0))
+
+        # Bilingual status label
+        self.split_status_var = tk.StringVar(value="Select a bilingual subtitle file")
+        self.split_status_label = ttk.Label(file_frame, textvariable=self.split_status_var,
+                                            font=('TkDefaultFont', 9, 'italic'))
+        self.split_status_label.pack(anchor='w', pady=(5, 0))
+
+        # Options
+        options_frame = ttk.LabelFrame(tab, text="Split Options", padding="10")
+        options_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Language labels
+        lang_row = ttk.Frame(options_frame)
+        lang_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(lang_row, text="CJK language label:").pack(side=tk.LEFT)
+        self.split_lang1_var = tk.StringVar(value="zh")
+        ttk.Combobox(lang_row, textvariable=self.split_lang1_var, width=8,
+                     values=['zh', 'ja', 'ko', 'chi', 'jpn', 'kor']).pack(side=tk.LEFT, padx=(5, 15))
+        ttk.Label(lang_row, text="Latin language label:").pack(side=tk.LEFT)
+        self.split_lang2_var = tk.StringVar(value="en")
+        ttk.Combobox(lang_row, textvariable=self.split_lang2_var, width=8,
+                     values=['en', 'eng', 'fr', 'de', 'es']).pack(side=tk.LEFT, padx=(5, 0))
+
+        # CJK output format
+        fmt_row = ttk.Frame(options_frame)
+        fmt_row.pack(fill=tk.X, pady=(5, 5))
+        ttk.Label(fmt_row, text="CJK output format:").pack(side=tk.LEFT)
+        self.split_format_var = tk.StringVar(value="ass")
+        ttk.Radiobutton(fmt_row, text="ASS (recommended - embeds CJK font)",
+                       variable=self.split_format_var, value="ass").pack(side=tk.LEFT, padx=(5, 10))
+        ttk.Radiobutton(fmt_row, text="SRT (plain text, no font info)",
+                       variable=self.split_format_var, value="srt").pack(side=tk.LEFT)
+
+        # Strip formatting
+        self.split_strip_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Strip HTML formatting tags (<i>, <b>, etc.)",
+                       variable=self.split_strip_var).pack(anchor='w')
+
+        # Output directory
+        out_frame = ttk.LabelFrame(tab, text="Output Directory (optional)", padding="10")
+        out_frame.pack(fill=tk.X, pady=(0, 10))
+
+        out_row = ttk.Frame(out_frame)
+        out_row.pack(fill=tk.X)
+        self.split_output_dir_var = tk.StringVar()
+        ttk.Entry(out_row, textvariable=self.split_output_dir_var, width=55).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(out_row, text="Browse...", command=self._browse_split_output_dir).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(out_frame, text="Leave empty to save alongside input file",
+                 font=('TkDefaultFont', 8)).pack(anchor='w', pady=(3, 0))
+
+        # Execute button
+        btn_frame = ttk.Frame(tab)
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+        self.split_btn = ttk.Button(btn_frame, text="Split Subtitle", command=self._execute_split,
+                                     style='Big.TButton')
+        self.split_btn.pack(side=tk.RIGHT)
+
+    def _browse_split_file(self):
+        """Browse for a subtitle file to split."""
+        file_path = filedialog.askopenfilename(
+            title="Select Bilingual Subtitle",
+            filetypes=[
+                ("Subtitle Files", "*.srt *.ass *.ssa *.vtt"),
+                ("SRT Files", "*.srt"),
+                ("ASS/SSA Files", "*.ass *.ssa"),
+                ("All Files", "*.*")
+            ]
+        )
+        if file_path:
+            self.split_file_var.set(file_path)
+
+    def _browse_split_output_dir(self):
+        """Browse for output directory for split files."""
+        dir_path = filedialog.askdirectory(title="Select Output Directory")
+        if dir_path:
+            self.split_output_dir_var.set(dir_path)
+
+    def _on_split_file_changed(self):
+        """Handle split file selection change."""
+        file_path = self.split_file_var.get()
+        if file_path and Path(file_path).exists():
+            self.split_info_panel.update_info(Path(file_path))
+
+            # Check if bilingual in background
+            def check_bilingual():
+                try:
+                    from processors.splitter import BilingualSplitter
+                    splitter = BilingualSplitter()
+                    is_bi = splitter.is_bilingual(Path(file_path))
+                    if is_bi:
+                        self.split_status_var.set("Bilingual content detected - ready to split")
+                    else:
+                        self.split_status_var.set("Warning: File does not appear to be bilingual")
+                except Exception as e:
+                    self.split_status_var.set(f"Could not analyze file: {e}")
+
+            threading.Thread(target=check_bilingual, daemon=True).start()
+        else:
+            self.split_status_var.set("Select a bilingual subtitle file")
+
+    def _execute_split(self):
+        """Execute the split operation."""
+        file_path = self.split_file_var.get()
+        if not file_path:
+            messagebox.showwarning("No File", "Please select a subtitle file to split.")
+            return
+
+        input_path = Path(file_path)
+        if not input_path.exists():
+            messagebox.showerror("File Not Found", f"File not found: {file_path}")
+            return
+
+        output_dir = None
+        if self.split_output_dir_var.get():
+            output_dir = Path(self.split_output_dir_var.get())
+
+        lang1 = self.split_lang1_var.get()
+        lang2 = self.split_lang2_var.get()
+        strip_formatting = self.split_strip_var.get()
+        lang1_format = self.split_format_var.get()
+
+        self.split_btn.config(state='disabled')
+
+        def run_split():
+            try:
+                from processors.splitter import BilingualSplitter
+
+                splitter = BilingualSplitter(strip_formatting=strip_formatting)
+                lang1_path, lang2_path = splitter.split_file(
+                    input_path=input_path,
+                    output_dir=output_dir,
+                    lang1_label=lang1,
+                    lang2_label=lang2,
+                    lang1_format=lang1_format
+                )
+
+                results = []
+                if lang1_path:
+                    results.append(f"{lang1.upper()}: {lang1_path.name}")
+                if lang2_path:
+                    results.append(f"{lang2.upper()}: {lang2_path.name}")
+
+                if results:
+                    msg = "Split complete!\n\n" + "\n".join(results)
+                    self.root.after(0, lambda: messagebox.showinfo("Split Complete", msg))
+                else:
+                    self.root.after(0, lambda: messagebox.showwarning(
+                        "No Output", "No bilingual content found to split."))
+
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Split Failed", str(e)))
+            finally:
+                self.root.after(0, lambda: self.split_btn.config(state='normal'))
+
+        threading.Thread(target=run_split, daemon=True).start()
 
     def _create_shift_tab(self):
         """Create the Shift Timing tab."""

@@ -77,6 +77,8 @@ class InteractiveInterface:
                 elif choice == '6':
                     self._handle_pgs_conversion()
                 elif choice == '7':
+                    self._handle_split_subtitles()
+                elif choice == '8':
                     self._show_help()
                 elif choice == '0' or choice.lower() == 'q':
                     print("\nGoodbye!")
@@ -123,7 +125,8 @@ class InteractiveInterface:
             print("6. PGS Subtitle Conversion")
         else:
             print("6. PGS Subtitle Conversion (Not Available)")
-        print("7. Help & Information")
+        print("7. Split Bilingual Subtitles")
+        print("8. Help & Information")
         print("0. Exit")
         print()
         
@@ -1185,6 +1188,77 @@ class InteractiveInterface:
         else:
             print("❌ PGSRip is not available")
             print("   Run: python biss.py setup-pgsrip install")
+
+    def _handle_split_subtitles(self):
+        """Handle splitting bilingual subtitles into separate language files."""
+        print("\n" + "=" * 50)
+        print("SPLIT BILINGUAL SUBTITLES")
+        print("=" * 50)
+        print("\nSplit a bilingual subtitle file into separate language files.")
+        print("This is useful when Chinese/CJK text isn't displaying properly")
+        print("in your media player.\n")
+
+        # Get input file
+        file_path = input("Enter subtitle file path: ").strip().strip('"').strip("'")
+        if not file_path:
+            print("No file specified. Cancelled.")
+            return
+
+        input_path = Path(file_path)
+        if not input_path.exists():
+            print(f"File not found: {input_path}")
+            return
+
+        # Check if bilingual
+        from processors.splitter import BilingualSplitter
+
+        splitter = BilingualSplitter()
+        if not splitter.is_bilingual(input_path):
+            print("\nWarning: This file does not appear to contain bilingual content.")
+            proceed = input("Continue anyway? (y/N): ").strip().lower()
+            if proceed != 'y':
+                print("Cancelled.")
+                return
+
+        # Options
+        print(f"\nLanguage labels (default: zh / en)")
+        lang1 = input("CJK language label [zh]: ").strip() or 'zh'
+        lang2 = input("English language label [en]: ").strip() or 'en'
+
+        strip = input("Strip HTML formatting? (Y/n): ").strip().lower()
+        strip_formatting = strip != 'n'
+
+        output_dir = input("Output directory (Enter for same as input): ").strip().strip('"').strip("'")
+        output_path = Path(output_dir) if output_dir else None
+
+        # Execute split
+        print(f"\nSplitting {input_path.name}...")
+
+        try:
+            splitter = BilingualSplitter(strip_formatting=strip_formatting)
+            lang1_path, lang2_path = splitter.split_file(
+                input_path=input_path,
+                output_dir=output_path,
+                lang1_label=lang1,
+                lang2_label=lang2
+            )
+
+            print(f"\n{'='*50}")
+            print("SPLIT COMPLETE")
+            print(f"{'='*50}")
+
+            if lang1_path:
+                print(f"  {lang1.upper()}: {lang1_path}")
+            else:
+                print(f"  {lang1.upper()}: No content found")
+
+            if lang2_path:
+                print(f"  {lang2.upper()}: {lang2_path}")
+            else:
+                print(f"  {lang2.upper()}: No content found")
+
+        except Exception as e:
+            print(f"\nSplit failed: {e}")
 
     def _show_help(self):
         """Show help and information."""

@@ -331,7 +331,7 @@ class VideoContainerHandler:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minutes should be plenty
+                timeout=900  # 15 minutes for large remux files
             )
 
             if result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:

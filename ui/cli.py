@@ -134,6 +134,9 @@ For detailed help on any command:
         # ASS to SRT conversion command
         self._add_ass_convert_parser(subparsers)
 
+        # Split bilingual subtitles command
+        self._add_split_parser(subparsers)
+
         # Extract command (mkvextract integration)
         self._add_extract_parser(subparsers)
 
@@ -338,6 +341,14 @@ The tool auto-detects subtitle languages from:
         batch_merge_parser.add_argument('--auto-confirm', action='store_true',
                                       help='Skip interactive confirmations for fully automated processing')
 
+        # Track selection options
+        batch_merge_parser.add_argument('--chinese-track', help='Force specific Chinese track ID for all files')
+        batch_merge_parser.add_argument('--english-track', help='Force specific English track ID for all files (overrides intelligent selection)')
+        batch_merge_parser.add_argument('--remap-chinese', help='Language code to treat as Chinese')
+        batch_merge_parser.add_argument('--remap-english', help='Language code to treat as English')
+        batch_merge_parser.add_argument('--top', choices=['first', 'second'], default='first',
+                                      help='Which subtitle appears on top: first=foreign language, second=English (default: first)')
+
         # Enhanced alignment options for batch processing
         batch_merge_parser.add_argument('--auto-align', action='store_true',
                                       help='Enable automatic alignment using advanced methods')
@@ -475,6 +486,59 @@ BILINGUAL HANDLING:
                                        help='Keep ASS formatting effects (not recommended for SRT)')
         ass_convert_parser.add_argument('--preview', action='store_true',
                                        help='Preview conversion without writing files')
+
+    def _add_split_parser(self, subparsers):
+        """Add split bilingual subtitles command parser."""
+        split_parser = subparsers.add_parser(
+            'split',
+            help='Split bilingual subtitles into separate language files',
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description='''Split a bilingual subtitle file into separate language files.
+
+This is the inverse of the merge operation - it takes a subtitle file that
+contains both CJK (Chinese/Japanese/Korean) and English text, and produces
+two separate files: one for each language.
+
+USAGE:
+  # Split a bilingual SRT into Chinese and English files
+  biss split bilingual.zh.srt
+
+  # Split with custom output directory
+  biss split bilingual.srt -o /path/to/output/
+
+  # Split without stripping HTML formatting
+  biss split bilingual.srt --keep-formatting
+
+COMMON USE CASE:
+  If Chinese/CJK subtitles are not displaying properly in your media player
+  (showing as squares or missing), use ASS output format which embeds a
+  CJK-compatible font specification:
+
+  biss split bilingual.zh.srt -f ass
+
+OUTPUT:
+  Given input "Movie.zh.srt" with -f ass:
+    - Movie.zh.ass  (Chinese/CJK with CJK font embedded in style)
+    - Movie.en.srt  (English text only)
+
+  Given input "Movie.zh.srt" (default SRT):
+    - Movie.zh.srt  (Chinese/CJK text only)
+    - Movie.en.srt  (English text only)
+'''
+        )
+
+        split_parser.add_argument('input', type=Path,
+                                  help='Bilingual subtitle file to split')
+        split_parser.add_argument('-o', '--output-dir', type=Path,
+                                  help='Output directory (default: same as input file)')
+        split_parser.add_argument('--keep-formatting', action='store_true',
+                                  help='Keep HTML formatting tags (default: strip them)')
+        split_parser.add_argument('--lang1', type=str, default='zh',
+                                  help='Label for CJK language output file (default: zh)')
+        split_parser.add_argument('--lang2', type=str, default='en',
+                                  help='Label for English/Latin output file (default: en)')
+        split_parser.add_argument('-f', '--format', choices=['srt', 'ass'], default='srt',
+                                  help='Output format for CJK file (default: srt). Use "ass" to embed CJK font for better player compatibility.')
 
     def _add_pgs_parsers(self, subparsers):
         """Add PGS conversion command parsers."""
@@ -624,6 +688,8 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
                 return self._handle_batch_realign(args)
             elif args.command == 'convert-ass':
                 return self._handle_convert_ass(args)
+            elif args.command == 'split':
+                return self._handle_split(args)
             elif args.command == 'convert-pgs':
                 return self._handle_convert_pgs(args)
             elif args.command == 'batch-convert-pgs':
@@ -983,6 +1049,8 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
 
         # Prepare merger options for enhanced alignment
         merger_options = {}
+        if hasattr(args, 'top') and args.top != 'first':
+            merger_options['top_language'] = args.top
         if hasattr(args, 'auto_align') and (args.auto_align or args.use_translation or args.manual_align):
             merger_options.update({
                 'auto_align': args.auto_align,
@@ -994,11 +1062,29 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
                 'reference_language_preference': args.reference_language
             })
 
+        # Prepare video processing options (passed to process_video per-file)
+        video_options = {}
+        if getattr(args, 'chinese_track', None):
+            video_options['chinese_track'] = args.chinese_track
+        if getattr(args, 'english_track', None):
+            video_options['english_track'] = args.english_track
+        if getattr(args, 'remap_chinese', None):
+            video_options['remap_chinese'] = args.remap_chinese
+        if getattr(args, 'remap_english', None):
+            video_options['remap_english'] = args.remap_english
+        if getattr(args, 'prefer_external', False):
+            video_options['prefer_external'] = True
+        if getattr(args, 'prefer_embedded', False):
+            video_options['prefer_embedded'] = True
+        if getattr(args, 'format', 'srt') != 'srt':
+            video_options['output_format'] = args.format
+
         # Use interactive processing for enhanced user control
         results = batch_processor.process_directory_interactive(
             directory=args.directory,
             pattern="*.mkv",  # Focus on video files
-            merger_options=merger_options if merger_options else None
+            merger_options=merger_options if merger_options else None,
+            video_options=video_options if video_options else None
         )
 
         # Print summary
@@ -1252,6 +1338,64 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
         print(f"Failed: {failed}")
 
         return 0 if failed == 0 else 1
+
+    def _handle_split(self, args) -> int:
+        """Handle split command for splitting bilingual subtitles."""
+        from processors.splitter import BilingualSplitter
+
+        if not args.input.exists():
+            logger.error(f"Input file not found: {args.input}")
+            return 1
+
+        # Dry-run mode
+        if getattr(args, 'dry_run', False):
+            print("\n[DRY RUN] Would split bilingual subtitle file:")
+            print(f"  Input: {args.input}")
+            print(f"  Output directory: {args.output_dir or args.input.parent}")
+            print(f"  CJK language label: {args.lang1}")
+            print(f"  English language label: {args.lang2}")
+            print(f"  Strip formatting: {not args.keep_formatting}")
+            print("\n[DRY RUN] No changes made.")
+            return 0
+
+        splitter = BilingualSplitter(
+            strip_formatting=not getattr(args, 'keep_formatting', False)
+        )
+
+        # Check if the file appears to be bilingual
+        if not splitter.is_bilingual(args.input):
+            logger.warning(f"File does not appear to contain bilingual content: {args.input.name}")
+            print("Warning: This file does not appear to be bilingual (no mixed CJK/Latin content detected).")
+            print("Proceeding anyway...")
+
+        try:
+            lang1_path, lang2_path = splitter.split_file(
+                input_path=args.input,
+                output_dir=args.output_dir,
+                lang1_label=args.lang1,
+                lang2_label=args.lang2,
+                lang1_format=getattr(args, 'format', 'srt')
+            )
+
+            print(f"\n{'='*60}")
+            print("SPLIT COMPLETE")
+            print(f"{'='*60}")
+
+            if lang1_path:
+                print(f"  {args.lang1.upper()}: {lang1_path}")
+            else:
+                print(f"  {args.lang1.upper()}: No content found")
+
+            if lang2_path:
+                print(f"  {args.lang2.upper()}: {lang2_path}")
+            else:
+                print(f"  {args.lang2.upper()}: No content found")
+
+            return 0
+
+        except Exception as e:
+            logger.error(f"Split failed: {e}")
+            return 1
 
     def _handle_convert_pgs(self, args) -> int:
         """Handle convert-pgs command."""

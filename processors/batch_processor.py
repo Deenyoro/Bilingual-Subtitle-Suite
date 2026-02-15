@@ -304,14 +304,16 @@ class BatchProcessor:
         return '\n'.join(summary_lines)
 
     def process_directory_interactive(self, directory: Path, pattern: str = "*.mkv",
-                                    merger_options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                                    merger_options: Optional[Dict[str, Any]] = None,
+                                    video_options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Process video files in directory with interactive confirmation for each file.
 
         Args:
             directory: Directory containing video files
             pattern: File pattern to match (default: "*.mkv")
-            merger_options: Options to pass to BilingualMerger
+            merger_options: Options to pass to BilingualMerger constructor
+            video_options: Options to pass to process_video (e.g. chinese_track, english_track)
 
         Returns:
             Dictionary with processing results
@@ -419,10 +421,10 @@ class BatchProcessor:
                     'auto_align': True,
                     'manual_align': True
                 })
-                success = self._process_single_video(video_file, manual_options)
+                success = self._process_single_video(video_file, manual_options, video_options)
             elif choice == 'y':
                 # Process with standard options
-                success = self._process_single_video(video_file, merger_options)
+                success = self._process_single_video(video_file, merger_options, video_options)
             else:
                 print(f"Invalid choice '{choice}', skipping file")
                 results['skipped'] += 1
@@ -443,7 +445,13 @@ class BatchProcessor:
     def _find_external_subtitles(self, video_file: Path) -> List[Path]:
         """Find external subtitle files for a video file."""
         base_name = video_file.stem
-        subtitle_extensions = ['.srt', '.ass', '.ssa', '.vtt', '.zh.srt', '.en.srt']
+        subtitle_extensions = [
+            '.srt', '.ass', '.ssa', '.vtt',
+            '.zh.srt', '.zh.ass', '.chi.srt', '.chi.ass',
+            '.en.srt', '.en.ass', '.eng.srt', '.eng.ass',
+            '.ja.srt', '.ja.ass', '.jpn.srt', '.jpn.ass',
+            '.ko.srt', '.ko.ass', '.kor.srt', '.kor.ass',
+        ]
 
         external_subs = []
         for ext in subtitle_extensions:
@@ -453,8 +461,15 @@ class BatchProcessor:
 
         return external_subs
 
-    def _process_single_video(self, video_file: Path, merger_options: Optional[Dict[str, Any]] = None) -> bool:
-        """Process a single video file with the given options."""
+    def _process_single_video(self, video_file: Path, merger_options: Optional[Dict[str, Any]] = None,
+                             video_options: Optional[Dict[str, Any]] = None) -> bool:
+        """Process a single video file with the given options.
+
+        Args:
+            video_file: Path to the video file
+            merger_options: Options for BilingualMerger constructor (alignment settings, etc.)
+            video_options: Options for process_video call (track selection, format, etc.)
+        """
         try:
             # Create merger with specified options
             if merger_options:
@@ -462,8 +477,8 @@ class BatchProcessor:
             else:
                 merger = self.merger
 
-            # Process the video
-            result = merger.process_video(video_file)
+            # Process the video with any per-file options
+            result = merger.process_video(video_file, **(video_options or {}))
             return result
 
         except Exception as e:
