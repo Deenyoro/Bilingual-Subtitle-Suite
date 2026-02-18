@@ -18,23 +18,23 @@ tools into a single, unified interface with both command-line and interactive mo
 
 Usage:
     # GUI mode (graphical interface)
-    python biss.py gui
+    biss gui
 
     # Interactive mode (text menu)
-    python biss.py interactive
+    biss interactive
 
     # Command-line mode
-    python biss.py merge movie.mkv --output bilingual.srt
-    python biss.py merge chinese.srt english.srt
-    python biss.py shift subtitle.srt --offset="-2.5s"
-    python biss.py convert subtitle.srt
+    biss merge movie.mkv --output bilingual.srt
+    biss merge chinese.srt english.srt
+    biss shift subtitle.srt --offset="-2.5s"
+    biss convert subtitle.srt
 
     # Help
-    python biss.py --help
-    python biss.py <command> --help
+    biss --help
+    biss <command> --help
 
-Author: Bilingual Subtitle Suite Team
-Version: 2.0.0
+Author: Dean Thomas (@Deenyoro)
+Version: 2.1.0
 """
 
 import sys

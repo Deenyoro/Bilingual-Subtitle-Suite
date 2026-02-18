@@ -27,7 +27,7 @@ Available for all commands:
 
 ### Overview
 ```bash
-python biss.py <command> [options]
+biss <command> [options]
 
 # Available commands:
 merge                       # Merge bilingual subtitles
@@ -50,19 +50,19 @@ Create bilingual subtitle files by combining Chinese and English tracks.
 
 ### Basic Syntax
 ```bash
-python biss.py merge <input> [options]
+biss merge <input> [options]
 ```
 
 ### Input Sources
 ```bash
 # From video file (auto-detect embedded subtitles)
-python biss.py merge movie.mkv
+biss merge movie.mkv
 
 # From specific subtitle files
-python biss.py merge --chinese file.zh.srt --english file.en.srt
+biss merge --chinese file.zh.srt --english file.en.srt
 
 # Mixed sources
-python biss.py merge movie.mkv --chinese external.zh.srt
+biss merge movie.mkv --chinese external.zh.srt
 ```
 
 ### Output Options
@@ -110,27 +110,27 @@ python biss.py merge movie.mkv --chinese external.zh.srt
 ### Examples
 ```bash
 # Basic merge with auto-detection
-python biss.py merge "Movie (2023).mkv"
+biss merge "Movie (2023).mkv"
 
 # Enhanced alignment with manual control
-python biss.py merge movie.mkv --auto-align --manual-align
+biss merge movie.mkv --auto-align --manual-align
 
 # Large timing offset handling (50+ second differences)
-python biss.py merge movie.mkv --auto-align --use-translation \
+biss merge movie.mkv --auto-align --use-translation \
   --alignment-threshold 0.3 --enable-mixed-realignment
 
 # Translation-assisted alignment for cross-language content
-python biss.py merge movie.mkv --auto-align --use-translation \
+biss merge movie.mkv --auto-align --use-translation \
   --sync-strategy translation --alignment-threshold 0.9
 
 # Mixed track realignment (embedded + external scenarios)
-python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
+biss merge movie.mkv --auto-align --enable-mixed-realignment
 
 # Force PGS conversion
-python biss.py merge movie.mkv --force-pgs --pgs-language chi_sim
+biss merge movie.mkv --force-pgs --pgs-language chi_sim
 
 # Specify tracks and output
-python biss.py merge movie.mkv --chinese-track 2 --english-track 1 \
+biss merge movie.mkv --chinese-track 2 --english-track 1 \
   --output "Movie.bilingual.srt" --format srt
 ```
 
@@ -140,7 +140,7 @@ Convert subtitle file encodings to UTF-8.
 
 ### Basic Syntax
 ```bash
-python biss.py convert <input> [options]
+biss convert <input> [options]
 ```
 
 ### Options
@@ -153,10 +153,10 @@ python biss.py convert <input> [options]
 ### Examples
 ```bash
 # Convert to UTF-8 with backup
-python biss.py convert "chinese_subtitle.srt" --backup
+biss convert "chinese_subtitle.srt" --backup
 
 # Force conversion
-python biss.py convert subtitle.srt --encoding utf-8 --force
+biss convert subtitle.srt --encoding utf-8 --force
 ```
 
 ## Realign Command
@@ -165,7 +165,7 @@ Realign subtitle timing based on reference files.
 
 ### Basic Syntax
 ```bash
-python biss.py realign <source> <reference> [options]
+biss realign <source> <reference> [options]
 ```
 
 ### Options
@@ -180,14 +180,14 @@ python biss.py realign <source> <reference> [options]
 ### Examples
 ```bash
 # Basic realignment
-python biss.py realign source.srt reference.srt --output aligned.srt
+biss realign source.srt reference.srt --output aligned.srt
 
 # Specify alignment points
-python biss.py realign source.srt reference.srt \
+biss realign source.srt reference.srt \
   --source-index 5 --reference-index 3
 
 # Apply time offset
-python biss.py realign source.srt --offset 2.5
+biss realign source.srt --offset 2.5
 ```
 
 ## Batch Commands
@@ -196,7 +196,7 @@ Process multiple files efficiently with batch operations.
 
 ### Batch Merge
 ```bash
-python biss.py batch-merge <directory> [options]
+biss batch-merge <directory> [options]
 
 # Options
 --recursive                # Process subdirectories
@@ -208,13 +208,13 @@ python biss.py batch-merge <directory> [options]
 --manual-align             # Enable manual alignment when needed
 
 # Examples
-python biss.py batch-merge "Season 01" --auto-align --auto-confirm
-python biss.py batch-merge /media/movies --recursive --prefer-external
+biss batch-merge "Season 01" --auto-align --auto-confirm
+biss batch-merge /media/movies --recursive --prefer-external
 ```
 
 ### Batch Convert
 ```bash
-python biss.py batch-convert <directory> [options]
+biss batch-convert <directory> [options]
 
 # Options
 --recursive                # Process subdirectories
@@ -224,13 +224,13 @@ python biss.py batch-convert <directory> [options]
 --parallel                 # Use parallel processing
 
 # Examples
-python biss.py batch-convert /media/chinese-subs --backup --parallel
-python biss.py batch-convert . --recursive --encoding utf-8 --force
+biss batch-convert /media/chinese-subs --backup --parallel
+biss batch-convert . --recursive --encoding utf-8 --force
 ```
 
 ### Batch Realign
 ```bash
-python biss.py batch-realign <directory> [options]
+biss batch-realign <directory> [options]
 
 # Options
 --source-ext EXT           # Source file extension (e.g., .zh.srt)
@@ -239,13 +239,13 @@ python biss.py batch-realign <directory> [options]
 --recursive                # Process subdirectories
 
 # Examples
-python biss.py batch-realign /media --source-ext .zh.srt --reference-ext .en.srt
-python biss.py batch-realign . --recursive --output-suffix .synced
+biss batch-realign /media --source-ext .zh.srt --reference-ext .en.srt
+biss batch-realign . --recursive --output-suffix .synced
 ```
 
 ### Batch Align (Bulk)
 ```bash
-python biss.py batch-align <directory> [options]
+biss batch-align <directory> [options]
 
 # Options
 --reference-language LANG  # Reference language for alignment
@@ -253,18 +253,18 @@ python biss.py batch-align <directory> [options]
 --auto-confirm             # Skip confirmation prompts
 
 # Examples
-python biss.py batch-align /media/subtitles --reference-language en
+biss batch-align /media/subtitles --reference-language en
 ```
 
 ## PGS Commands
 
 Convert PGS (Presentation Graphic Stream) subtitles to text format.
 
-> **Note**: PGS conversion functionality is powered by [PGSRip by ratoaq2](https://github.com/ratoaq2/pgsrip). Install with `python biss.py setup-pgsrip install`.
+> **Note**: PGS conversion functionality is powered by [PGSRip by ratoaq2](https://github.com/ratoaq2/pgsrip). Install with `biss setup-pgsrip install`.
 
 ### Setup PGSRip
 ```bash
-python biss.py setup-pgsrip <action>
+biss setup-pgsrip <action>
 
 # Actions
 install                    # Install PGSRip and dependencies
@@ -272,26 +272,26 @@ check                      # Check installation status
 uninstall                  # Remove PGSRip installation
 
 # Examples
-python biss.py setup-pgsrip install
-python biss.py setup-pgsrip check
+biss setup-pgsrip install
+biss setup-pgsrip check
 ```
 
 ### Convert PGS
 ```bash
-python biss.py convert-pgs <input> [options]
+biss convert-pgs <input> [options]
 
 # Options
 --language LANG            # OCR language (eng, chi_sim, chi_tra)
 --output PATH              # Output SRT file path
 
 # Examples
-python biss.py convert-pgs movie.mkv --language chi_sim
-python biss.py convert-pgs movie.mkv --language eng --output movie.en.srt
+biss convert-pgs movie.mkv --language chi_sim
+biss convert-pgs movie.mkv --language eng --output movie.en.srt
 ```
 
 ### Batch Convert PGS
 ```bash
-python biss.py batch-convert-pgs <directory> [options]
+biss batch-convert-pgs <directory> [options]
 
 # Options
 --recursive                # Process subdirectories
@@ -299,14 +299,14 @@ python biss.py batch-convert-pgs <directory> [options]
 --auto-confirm             # Skip confirmation prompts
 
 # Examples
-python biss.py batch-convert-pgs /media/movies --language chi_sim --recursive
+biss batch-convert-pgs /media/movies --language chi_sim --recursive
 ```
 
 ## Utility Commands
 
 ### Cleanup Backups
 ```bash
-python biss.py cleanup-backups <directory> [options]
+biss cleanup-backups <directory> [options]
 
 # Options
 --older-than DAYS          # Remove backups older than N days
@@ -314,13 +314,13 @@ python biss.py cleanup-backups <directory> [options]
 --recursive                # Process subdirectories
 
 # Examples
-python biss.py cleanup-backups . --older-than 30
-python biss.py cleanup-backups /media --dry-run --recursive
+biss cleanup-backups . --older-than 30
+biss cleanup-backups /media --dry-run --recursive
 ```
 
 ### Interactive Mode
 ```bash
-python biss.py interactive
+biss interactive
 
 # Launch the interactive menu-driven interface
 # All CLI functionality available through guided menus
@@ -331,51 +331,51 @@ python biss.py interactive
 ### Complex Workflows
 ```bash
 # High-precision anime processing
-python biss.py merge anime.mkv --auto-align --manual-align \
+biss merge anime.mkv --auto-align --manual-align \
   --use-translation --alignment-threshold 0.95 --debug
 
 # Large timing offset scenarios (Made in Abyss style)
-python biss.py merge "Made in Abyss S02E01.mkv" --auto-align \
+biss merge "Made in Abyss S02E01.mkv" --auto-align \
   --use-translation --alignment-threshold 0.3 --enable-mixed-realignment
 
 # Batch process with enhanced alignment for large offsets
-python biss.py batch-merge "Season 02" --auto-align --use-translation \
+biss batch-merge "Season 02" --auto-align --use-translation \
   --alignment-threshold 0.3 --auto-confirm
 
 # Batch process with PGS fallback
-python biss.py batch-merge "Season 01" --auto-align --force-pgs \
+biss batch-merge "Season 01" --auto-align --force-pgs \
   --pgs-language chi_sim --auto-confirm
 
 # Translation-assisted batch processing
-python biss.py batch-merge /media/anime --auto-align --use-translation \
+biss batch-merge /media/anime --auto-align --use-translation \
   --sync-strategy translation --recursive
 ```
 
 ### Debugging and Troubleshooting
 ```bash
 # Debug mode with verbose output
-python biss.py --debug --verbose merge movie.mkv --auto-align
+biss --debug --verbose merge movie.mkv --auto-align
 
 # List tracks for analysis
-python biss.py merge movie.mkv --list-tracks
+biss merge movie.mkv --list-tracks
 
 # Check PGS installation
-python biss.py setup-pgsrip check
+biss setup-pgsrip check
 
 # Test alignment without creating output
-python biss.py merge movie.mkv --auto-align --manual-align --debug
+biss merge movie.mkv --auto-align --manual-align --debug
 ```
 
 ### Environment Integration
 ```bash
 # Set API key for translation
 export GOOGLE_TRANSLATE_API_KEY="your-api-key"
-python biss.py merge movie.mkv --auto-align --use-translation
+biss merge movie.mkv --auto-align --use-translation
 
 # Custom FFmpeg timeout
 export FFMPEG_TIMEOUT=1800
-python biss.py merge large-movie.mkv
+biss merge large-movie.mkv
 
 # Disable colors for scripting
-python biss.py --no-colors batch-merge /media --auto-confirm
+biss --no-colors batch-merge /media --auto-confirm
 ```

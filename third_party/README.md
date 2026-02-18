@@ -20,7 +20,7 @@ PGS subtitles are bitmap-based subtitles commonly found in Blu-ray discs and som
 
 ```bash
 # Install PGSRip and all dependencies
-python biss.py setup-pgsrip install
+biss setup-pgsrip install
 
 # Or use the setup script directly
 python third_party/setup_pgsrip.py install
@@ -70,40 +70,40 @@ python third_party/setup_pgsrip.py install
 #### Convert Single Video
 ```bash
 # Convert PGS subtitles with auto-detection
-python biss.py convert-pgs movie.mkv
+biss convert-pgs movie.mkv
 
 # Specify OCR language
-python biss.py convert-pgs movie.mkv --language chi_sim
+biss convert-pgs movie.mkv --language chi_sim
 
 # List available PGS tracks
-python biss.py convert-pgs movie.mkv --list-tracks
+biss convert-pgs movie.mkv --list-tracks
 
 # Convert specific track
-python biss.py convert-pgs movie.mkv --track 3 --output subtitle.srt
+biss convert-pgs movie.mkv --track 3 --output subtitle.srt
 ```
 
 #### Batch Conversion
 ```bash
 # Batch convert all videos in directory
-python biss.py batch-convert-pgs /media/movies
+biss batch-convert-pgs /media/movies
 
 # Recursive processing with specific language
-python biss.py batch-convert-pgs /media --recursive --language eng
+biss batch-convert-pgs /media --recursive --language eng
 
 # Use separate output directory
-python biss.py batch-convert-pgs /media/movies --output-dir /output/subtitles
+biss batch-convert-pgs /media/movies --output-dir /output/subtitles
 ```
 
 #### Setup Management
 ```bash
 # Check installation status
-python biss.py setup-pgsrip check
+biss setup-pgsrip check
 
 # Install with specific languages
-python biss.py setup-pgsrip install --languages eng chi_sim
+biss setup-pgsrip install --languages eng chi_sim
 
 # Uninstall PGSRip
-python biss.py setup-pgsrip uninstall
+biss setup-pgsrip uninstall
 ```
 
 ### Interactive Interface
@@ -111,7 +111,7 @@ python biss.py setup-pgsrip uninstall
 Launch the interactive interface and select "PGS Subtitle Conversion":
 
 ```bash
-python biss.py interactive
+biss interactive
 ```
 
 The interactive interface provides:
@@ -126,7 +126,7 @@ PGS conversion is automatically integrated into the bilingual subtitle merging w
 
 ```bash
 # If no Chinese/English subtitles are found, PGS tracks will be converted automatically
-python biss.py merge movie.mkv --output bilingual.srt
+biss merge movie.mkv --output bilingual.srt
 ```
 
 ## Supported Languages
@@ -188,8 +188,8 @@ The installation creates a configuration file at `third_party/pgsrip_install/pgs
 ### Common Issues
 
 1. **"PGSRip is not installed"**
-   - Run: `python biss.py setup-pgsrip install`
-   - Check: `python biss.py setup-pgsrip check`
+   - Run: `biss setup-pgsrip install`
+   - Check: `biss setup-pgsrip check`
 
 2. **"Tesseract not found"**
    - Install Tesseract OCR for your platform
@@ -214,7 +214,7 @@ The installation creates a configuration file at `third_party/pgsrip_install/pgs
 Enable debug logging for detailed troubleshooting:
 
 ```bash
-python biss.py --debug convert-pgs movie.mkv
+biss --debug convert-pgs movie.mkv
 ```
 
 ### Manual Cleanup
@@ -223,7 +223,7 @@ To completely remove PGSRip installation:
 
 ```bash
 # Automatic cleanup
-python biss.py setup-pgsrip uninstall
+biss setup-pgsrip uninstall
 
 # Manual cleanup
 rm -rf third_party/pgsrip_install/

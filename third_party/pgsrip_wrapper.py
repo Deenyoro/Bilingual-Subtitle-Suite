@@ -376,17 +376,18 @@ class PGSRipWrapper:
                 f"{track.track_id}:{output_path}"
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            
+            # Use generous timeout for large UHD remux files (up to 30 min)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+
             if result.returncode == 0 and output_path.exists():
                 logger.debug(f"Extracted PGS track to: {output_path}")
                 return True
             else:
                 logger.error(f"Failed to extract PGS track: {result.stderr}")
                 return False
-                
+
         except subprocess.TimeoutExpired:
-            logger.error("PGS extraction timed out")
+            logger.error("PGS extraction timed out (exceeded 30 min)")
             return False
         except Exception as e:
             logger.error(f"PGS extraction failed: {e}")

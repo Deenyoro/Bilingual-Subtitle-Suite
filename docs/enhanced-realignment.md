@@ -58,21 +58,21 @@ Without enhanced realignment, the merger would either:
 
 ```bash
 # Enable enhanced realignment for mixed tracks
-python biss.py merge video.mkv --enable-mixed-realignment
+biss merge video.mkv --enable-mixed-realignment
 
 # Large timing offset handling (50+ second differences)
-python biss.py merge video.mkv --auto-align --use-translation --alignment-threshold 0.3
+biss merge video.mkv --auto-align --use-translation --alignment-threshold 0.3
 
 # Combined approach for maximum success rate
-python biss.py merge video.mkv --auto-align --use-translation \
+biss merge video.mkv --auto-align --use-translation \
   --alignment-threshold 0.3 --enable-mixed-realignment
 
 # Real-world anime example (Made in Abyss style)
-python biss.py merge "Made in Abyss S02E01.mkv" --auto-align \
+biss merge "Made in Abyss S02E01.mkv" --auto-align \
   --use-translation --alignment-threshold 0.3 --enable-mixed-realignment
 
 # Batch processing with enhanced alignment
-python biss.py batch-merge "Season 02" --auto-align --use-translation \
+biss batch-merge "Season 02" --auto-align --use-translation \
   --alignment-threshold 0.3 --auto-confirm
 ```
 

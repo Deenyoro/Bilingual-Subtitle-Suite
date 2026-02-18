@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g., v2.0.0)"
+        description: "Release tag (e.g., v2.1.0)"
         required: false
         type: string
 
@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
+  build-full:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -38,7 +38,7 @@ jobs:
         run: |
           mkdir -p third_party/pgsrip_install/tessdata
           cd third_party/pgsrip_install/tessdata
-          for lang in eng chi_sim chi_tra; do
+          for lang in eng chi_sim chi_tra jpn kor; do
             echo "Downloading ${lang}.traineddata..."
             curl -fSL -o "${lang}.traineddata" \
               "https://github.com/tesseract-ocr/tessdata/raw/main/${lang}.traineddata"
@@ -55,7 +55,6 @@ jobs:
         shell: bash
         run: |
           mkdir -p third_party/pgsrip_install/pgsrip
-          # Create minimal config so wrapper detects installation
           cat > third_party/pgsrip_install/pgsrip_config.json << 'CONFIGEOF'
           {
             "installation_type": "bundled",
@@ -63,7 +62,6 @@ jobs:
             "version": "ci-build"
           }
           CONFIGEOF
-          # Copy pgsrip package if pip installed it
           PGSRIP_LOC=$(python -c "import pgsrip; print(pgsrip.__path__[0])" 2>/dev/null || echo "")
           if [ -n "$PGSRIP_LOC" ] && [ -d "$PGSRIP_LOC" ]; then
             cp -r "$PGSRIP_LOC"/* third_party/pgsrip_install/pgsrip/
@@ -72,13 +70,67 @@ jobs:
             echo "PGSRip package not available - PGS features disabled"
           fi
 
-      - name: Build executable
-        run: python build.py --clean
+      - name: Build full executable
+        run: python build.py --clean --output-name biss-full
 
-      - name: Verify executable
+      - name: Verify full executable
+        run: |
+          dist\biss-full.exe --version
+          dist\biss-full.exe --help
+
+      - name: Upload full build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: biss-full
+          path: dist/biss-full.exe
+
+  build-lite:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install requests pysrt charset-normalizer Pillow python-dotenv
+
+      - name: Build lite executable
+        run: python build.py --clean --lite
+
+      - name: Verify lite executable
         run: |
           dist\biss.exe --version
           dist\biss.exe --help
+
+      - name: Upload lite build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: biss-lite
+          path: dist/biss.exe
+
+  release:
+    needs: [build-full, build-lite]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download full build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: biss-full
+          path: artifacts/full
+
+      - name: Download lite build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: biss-lite
+          path: artifacts/lite
 
       - name: Get version from tag
         id: version
@@ -98,29 +150,32 @@ jobs:
           body: |
             ## Bilingual Subtitle Suite ${{ steps.version.outputs.tag }}
 
-            ### Download
-            Download `biss.exe` below - a self-contained Windows executable.
+            ### Downloads
+
+            | File | Description | Approx. Size |
+            |------|-------------|--------------|
+            | **`biss.exe`** | Lite build — all features except PGS OCR | ~20 MB |
+            | **`biss-full.exe`** | Full build — includes PGS OCR with bundled Tesseract data | ~110 MB |
+
+            > **Which one should I download?**
+            > Most users should start with **`biss.exe`** (lite). It handles subtitle merging, alignment, encoding conversion, batch processing, and the full GUI/CLI — everything except PGS image-based subtitle OCR. Download **`biss-full.exe`** only if you need to convert PGS (Blu-ray) subtitles to text.
+
+            ### Bundled Tessdata (full build only)
+            `eng`, `chi_sim`, `chi_tra`, `jpn`, `kor`
 
             ### Usage
-            - **GUI**: Double-click `biss.exe`
-            - **CLI**: Run from PowerShell/CMD: `biss.exe merge movie.mkv --output subs.srt`
+            - **GUI**: Double-click the exe
+            - **CLI**: `biss.exe merge movie.mkv --output subs.srt`
             - **Help**: `biss.exe --help`
-
-            ### Features
-            - Bilingual subtitle merging (CJK + English)
-            - Smart alignment using proper noun matching, numbers, and text similarity
-            - Subtitle realignment and timing adjustment
-            - Encoding conversion and detection
-            - PGS subtitle OCR conversion
-            - Batch processing
-            - Interactive GUI and CLI modes
 
             ### Requirements
             - Windows 10 or later
             - [FFmpeg](https://ffmpeg.org/download.html) on PATH (for video processing)
-            - [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) on PATH (for PGS subtitle conversion)
             - [MKVToolNix](https://mkvtoolnix.download/) on PATH (for MKV operations)
-          files: dist/biss.exe
+            - [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) on PATH (**lite build only**, for PGS subtitle conversion)
+          files: |
+            artifacts/lite/biss.exe
+            artifacts/full/biss-full.exe
           draft: false
           prerelease: false
         env:
