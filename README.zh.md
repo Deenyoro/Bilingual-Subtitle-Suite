@@ -231,3 +231,7 @@ Dean Thomas ([@Deenyoro](https://github.com/Deenyoro))
 - **[PGSRip](https://github.com/ratoaq2/pgsrip)** by ratoaq2 — PGS 字幕提取（Apache 2.0）
 - **[Tesseract OCR](https://github.com/tesseract-ocr/tesseract)** — 光学字符识别（Apache 2.0）
 - **[FFmpeg](https://ffmpeg.org/)** — 音视频处理（LGPL/GPL）
+
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE) 许可证。

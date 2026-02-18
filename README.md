@@ -295,3 +295,7 @@ This project integrates several excellent open-source tools:
 - **[PGSRip](https://github.com/ratoaq2/pgsrip)** by ratoaq2 - PGS subtitle extraction (Apache 2.0)
 - **[Tesseract OCR](https://github.com/tesseract-ocr/tesseract)** - Optical character recognition (Apache 2.0)
 - **[FFmpeg](https://ffmpeg.org/)** - Video/audio processing (LGPL/GPL)
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
