@@ -47,6 +47,15 @@ def find_available_data_files(lite=False):
             datas.append((str(img), "images"))
         print(f"  [+] Images: {images_dir}")
 
+    # Always bundle locale files (i18n)
+    locales_dir = ROOT_DIR / "locales"
+    if locales_dir.exists() and any(locales_dir.glob("*.json")):
+        langs = [f.stem for f in locales_dir.glob("*.json")]
+        datas.append((str(locales_dir), "locales"))
+        print(f"  [+] Locales: {', '.join(langs)}")
+    else:
+        print("  [-] Locales: not found (i18n unavailable)")
+
     if lite:
         print("  [~] Lite build: skipping tessdata, pgsrip package, and pgsrip dependencies")
     else:
@@ -120,6 +129,7 @@ def get_hidden_imports():
         "utils.logging_config",
         "utils.file_operations",
         "utils.backup_manager",
+        "utils.i18n",
         "third_party",
         "third_party.pgsrip_wrapper",
         # Third-party pip packages

@@ -14,10 +14,20 @@ Usage:
 import json
 import locale
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
-_LOCALES_DIR = Path(__file__).parent.parent / "locales"
+
+def _get_locales_dir() -> Path:
+    """Resolve locales directory, handling PyInstaller frozen exe."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle — data files are in sys._MEIPASS
+        return Path(sys._MEIPASS) / "locales"
+    return Path(__file__).parent.parent / "locales"
+
+
+_LOCALES_DIR = _get_locales_dir()
 _current_locale = "en"
 _strings = {}
 _fallback_strings = {}

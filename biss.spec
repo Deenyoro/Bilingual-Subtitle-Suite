@@ -54,6 +54,11 @@ images_dir = os.path.join(ROOT, 'images')
 if os.path.isdir(images_dir):
     datas.append((images_dir, 'images'))
 
+# Bundle locale files (i18n)
+locales_dir = os.path.join(ROOT, 'locales')
+if os.path.isdir(locales_dir):
+    datas.append((locales_dir, 'locales'))
+
 # Bundle third_party config templates (not the large install directory)
 third_party_init = os.path.join(ROOT, 'third_party', '__init__.py')
 if os.path.exists(third_party_init):
