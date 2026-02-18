@@ -35,6 +35,7 @@ MANIFEST
 *.manifest
 *.spec
 !biss.spec
+*.ico
 
 # Installer logs
 pip-log.txt
