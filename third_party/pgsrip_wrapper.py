@@ -75,57 +75,138 @@ class PGSRipWrapper:
         return {}
     
     def _check_installation(self) -> bool:
-        """Check if PGSRip is properly installed."""
-        if not self.config:
+        """Check if PGSRip is properly installed or bundled."""
+        # Check for PGSRip library (either in install_dir or importable)
+        has_pgsrip = (self.install_dir / "pgsrip").exists()
+        if not has_pgsrip:
+            try:
+                import pgsrip
+                has_pgsrip = True
+            except ImportError:
+                pass
+        if not has_pgsrip and not self.config:
             return False
-        
-        # Check required paths
-        required_paths = ['pgsrip', 'tessdata']
-        for path_key in required_paths:
-            if path_key not in self.config.get('paths', {}):
-                return False
-            
-            path = Path(self.config['paths'][path_key])
-            if not path.exists():
-                return False
-        
-        # Check if tesseract is available
-        try:
-            result = subprocess.run(['tesseract', '--version'], 
-                                  capture_output=True, text=True)
-            if result.returncode != 0:
-                return False
-        except FileNotFoundError:
+
+        # Check for tessdata (bundled or in install_dir)
+        tessdata = self._get_tessdata_path()
+        if not tessdata:
             return False
-        
+
+        # Check if tesseract is available (bundled, PATH, or common locations)
+        self._tesseract_path = self._find_tesseract()
+        if not self._tesseract_path:
+            return False
+
         # Check if mkvextract is available
         try:
-            result = subprocess.run(['mkvextract', '--version'], 
+            result = subprocess.run(['mkvextract', '--version'],
                                   capture_output=True, text=True)
             if result.returncode != 0:
                 return False
         except FileNotFoundError:
             return False
-        
+
         return True
-    
+
+    def _find_tesseract(self) -> Optional[str]:
+        """Find tesseract executable, checking bundled, PATH, and common install locations."""
+        candidates = []
+
+        # 1. Check bundled Tesseract next to the executable (PyInstaller build)
+        exe_dir = Path(sys.executable).parent
+        if sys.platform == 'win32':
+            bundled = exe_dir / "tesseract" / "tesseract.exe"
+        else:
+            bundled = exe_dir / "tesseract" / "tesseract"
+        if bundled.exists():
+            candidates.append(str(bundled))
+
+        # 2. Check PyInstaller _MEIPASS temporary directory
+        meipass = getattr(sys, '_MEIPASS', None)
+        if meipass:
+            meipass_path = Path(meipass)
+            if sys.platform == 'win32':
+                candidates.append(str(meipass_path / "tesseract" / "tesseract.exe"))
+            else:
+                candidates.append(str(meipass_path / "tesseract" / "tesseract"))
+
+        # 3. Check stored path from setup
+        stored_path_file = self.install_dir / "tesseract" / "tesseract_path.txt"
+        if stored_path_file.exists():
+            try:
+                candidates.append(stored_path_file.read_text().strip())
+            except Exception:
+                pass
+
+        # 4. Check PATH
+        candidates.append("tesseract")
+
+        # 5. Check common OS install locations
+        if sys.platform == 'win32':
+            candidates.extend([
+                r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+                r"C:\tools\tesseract\tesseract.exe",
+                r"C:\ProgramData\chocolatey\lib\tesseract\tools\tesseract.exe",
+            ])
+        else:
+            candidates.extend([
+                "/usr/bin/tesseract",
+                "/usr/local/bin/tesseract",
+                "/opt/homebrew/bin/tesseract",
+            ])
+
+        for candidate in candidates:
+            try:
+                result = subprocess.run([candidate, '--version'],
+                                        capture_output=True, text=True)
+                if result.returncode == 0:
+                    return candidate
+            except (FileNotFoundError, OSError):
+                continue
+        return None
+
     def _setup_environment(self):
         """Setup environment variables for PGSRip."""
-        if not self.config:
-            return
-        
-        paths = self.config.get('paths', {})
-        
-        # Add tessdata path to environment
-        if 'tessdata' in paths:
-            os.environ['TESSDATA_PREFIX'] = str(Path(paths['tessdata']).parent)
-        
-        # Add python packages to path
-        if 'python_packages' in paths:
-            python_packages_path = str(paths['python_packages'])
+        # Check for bundled tessdata first (PyInstaller build), then install_dir
+        tessdata_dir = None
+        exe_dir = Path(sys.executable).parent
+        bundled_tessdata = exe_dir / "tessdata"
+        meipass = getattr(sys, '_MEIPASS', None)
+        meipass_tessdata = Path(meipass) / "tessdata" if meipass else None
+
+        if bundled_tessdata.exists():
+            tessdata_dir = bundled_tessdata
+        elif meipass_tessdata and meipass_tessdata.exists():
+            tessdata_dir = meipass_tessdata
+        elif (self.install_dir / "tessdata").exists():
+            tessdata_dir = self.install_dir / "tessdata"
+
+        if tessdata_dir:
+            os.environ['TESSDATA_PREFIX'] = str(tessdata_dir)
+
+        python_packages_dir = self.install_dir / "python_packages"
+        if python_packages_dir.exists():
+            python_packages_path = str(python_packages_dir)
             if python_packages_path not in sys.path:
                 sys.path.insert(0, python_packages_path)
     
+    def _get_tessdata_path(self) -> Optional[Path]:
+        """Get the best available tessdata directory path."""
+        exe_dir = Path(sys.executable).parent
+        candidates = [
+            exe_dir / "tessdata",  # Bundled next to exe
+        ]
+        meipass = getattr(sys, '_MEIPASS', None)
+        if meipass:
+            candidates.append(Path(meipass) / "tessdata")
+        candidates.append(self.install_dir / "tessdata")
+
+        for candidate in candidates:
+            if candidate.exists() and any(candidate.glob("*.traineddata")):
+                return candidate
+        return None
+
     def is_available(self) -> bool:
         """Check if PGSRip is available for use."""
         return self.is_installed
@@ -148,11 +229,11 @@ class PGSRipWrapper:
         """Get list of supported OCR languages."""
         if not self.is_installed:
             return []
-        
-        tessdata_path = Path(self.config['paths']['tessdata'])
-        if not tessdata_path.exists():
+
+        tessdata_path = self._get_tessdata_path()
+        if not tessdata_path or not tessdata_path.exists():
             return []
-        
+
         # Find all .traineddata files
         language_files = list(tessdata_path.glob("*.traineddata"))
         languages = [f.stem for f in language_files]
@@ -317,8 +398,8 @@ class PGSRipWrapper:
         try:
             # Import PGSRip (should be available after setup)
             try:
-                # Add PGSRip to path
-                pgsrip_path = Path(self.config['paths']['pgsrip'])
+                # Add PGSRip to path dynamically based on install_dir
+                pgsrip_path = self.install_dir / "pgsrip"
                 if str(pgsrip_path) not in sys.path:
                     sys.path.insert(0, str(pgsrip_path))
 
@@ -334,8 +415,8 @@ class PGSRipWrapper:
             options = Options()
             options.language = ocr_language
 
-            # Set tessdata environment variable
-            tessdata_path = Path(self.config['paths']['tessdata'])
+            # Set tessdata environment variable (prefer bundled, fallback to install_dir)
+            tessdata_path = self._get_tessdata_path() or self.install_dir / "tessdata"
             os.environ['TESSDATA_PREFIX'] = str(tessdata_path)
 
             # Set output directory
@@ -363,8 +444,8 @@ class PGSRipWrapper:
                                ocr_language: str) -> bool:
         """Fallback: Convert SUP to SRT using command-line PGSRip."""
         try:
-            # Add PGSRip to Python path
-            pgsrip_path = Path(self.config['paths']['python_packages'])
+            # Add PGSRip to Python path dynamically
+            pgsrip_packages_path = self.install_dir / "python_packages"
 
             cmd = [
                 sys.executable, '-m', 'pgsrip',
@@ -375,8 +456,9 @@ class PGSRipWrapper:
 
             # Set environment for tessdata and Python path
             env = os.environ.copy()
-            env['TESSDATA_PREFIX'] = str(Path(self.config['paths']['tessdata']))
-            env['PYTHONPATH'] = str(pgsrip_path) + os.pathsep + env.get('PYTHONPATH', '')
+            tessdata_path = self._get_tessdata_path() or self.install_dir / "tessdata"
+            env['TESSDATA_PREFIX'] = str(tessdata_path)
+            env['PYTHONPATH'] = str(pgsrip_packages_path) + os.pathsep + env.get('PYTHONPATH', '')
 
             logger.debug(f"Running PGSRip CLI: {' '.join(cmd)}")
             logger.debug(f"TESSDATA_PREFIX: {env['TESSDATA_PREFIX']}")

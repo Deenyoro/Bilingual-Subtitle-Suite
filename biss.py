@@ -76,37 +76,40 @@ def create_main_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Launch interactive mode (default)
-  python biss.py
-  python biss.py interactive
-  
-  # Merge subtitles from video
-  python biss.py merge movie.mkv --output bilingual.srt
-  
-  # Merge two subtitle files
-  python biss.py merge --chinese chinese.srt --english english.srt --output merged.srt
-  
-  # Convert subtitle encoding
-  python biss.py convert subtitle.srt --encoding utf-8 --backup
-  
-  # Realign subtitles
-  python biss.py realign source.srt reference.srt --output aligned.srt
-  
-  # Batch convert directory
-  python biss.py batch-convert /media/movies --recursive --parallel
-  
-  # Batch merge videos
-  python biss.py batch-merge /media/movies --format srt --prefer-external
-  
-  # Batch realign subtitle pairs
-  python biss.py batch-realign /media --source-ext .zh.srt --reference-ext .en.srt
+  # Launch GUI (default when double-clicking biss.exe)
+  biss
+  biss gui
 
-  # Convert PGS subtitles to SRT (requires PGSRip installation)
-  python biss.py convert-pgs movie.mkv --language chi_sim
-  python biss.py batch-convert-pgs /media/movies --recursive
+  # Interactive text menu
+  biss interactive
+
+  # Merge subtitles from video
+  biss merge movie.mkv --output bilingual.srt
+
+  # Merge two subtitle files
+  biss merge --chinese chinese.srt --english english.srt --output merged.srt
+
+  # Convert subtitle encoding
+  biss convert subtitle.srt --encoding utf-8 --backup
+
+  # Realign subtitles
+  biss realign source.srt reference.srt --output aligned.srt
+
+  # Batch convert directory
+  biss batch-convert /media/movies --recursive --parallel
+
+  # Batch merge videos
+  biss batch-merge /media/movies --format srt --prefer-external
+
+  # Batch realign subtitle pairs
+  biss batch-realign /media --source-ext .zh.srt --reference-ext .en.srt
+
+  # Convert PGS subtitles to SRT
+  biss convert-pgs movie.mkv --language chi_sim
+  biss batch-convert-pgs /media/movies --recursive
 
 For detailed help on any command:
-  python biss.py <command> --help
+  biss <command> --help
         """
     )
     
@@ -165,10 +168,37 @@ def main():
         sys.exit(1)
 
 
+def _hide_console_window():
+    """Hide the console window on Windows when launching GUI from exe.
+
+    Only hides the console if this process is the sole owner (i.e., launched
+    by double-clicking the exe, not from an existing terminal session).
+    """
+    if sys.platform != 'win32':
+        return
+    try:
+        import ctypes
+        import ctypes.wintypes
+        kernel32 = ctypes.windll.kernel32
+        hwnd = kernel32.GetConsoleWindow()
+        if not hwnd:
+            return
+        # Check how many processes share this console
+        # If only 1 (ourselves), we own it — safe to hide (double-click launch)
+        # If 2+, we're inside a terminal — don't hide
+        pids = (ctypes.wintypes.DWORD * 16)()
+        count = kernel32.GetConsoleProcessList(pids, 16)
+        if count <= 1:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
+    except Exception:
+        pass
+
+
 def launch_gui_mode():
     """
     Launch the graphical user interface.
     """
+    _hide_console_window()
     try:
         from ui.gui import BISSGui
         app = BISSGui()

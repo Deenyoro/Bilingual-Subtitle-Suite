@@ -34,6 +34,7 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
+!biss.spec
 
 # Installer logs
 pip-log.txt
@@ -226,6 +227,11 @@ third_party/tesseract_install/
 # Translation cache
 translation_cache/
 *.cache
+
+# PyInstaller Build Artifacts
+build/
+dist/
+*.spec.bak
 
 # Development and Reference Files
 originalscript.py
