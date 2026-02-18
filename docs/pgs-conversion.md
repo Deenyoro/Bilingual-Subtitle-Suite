@@ -29,7 +29,7 @@ PGS (Presentation Graphic Stream) subtitles are image-based subtitle tracks comm
 
 ### OCR Technology
 
-The Chinese Subtitle Processor uses Tesseract OCR with specialized language models:
+The Bilingual Subtitle Suite uses Tesseract OCR with specialized language models:
 - **English**: High accuracy for Latin characters
 - **Chinese Simplified**: Optimized for simplified Chinese characters
 - **Chinese Traditional**: Support for traditional Chinese characters
@@ -43,7 +43,7 @@ The easiest way to set up PGS conversion is using the automated installer:
 
 ```bash
 # One-command installation
-python biss.py setup-pgsrip install
+biss setup-pgsrip install
 ```
 
 This command automatically:
@@ -57,12 +57,12 @@ This command automatically:
 
 **Step 1: Check Prerequisites**
 ```bash
-python biss.py setup-pgsrip check
+biss setup-pgsrip check
 ```
 
 **Step 2: Install Components**
 ```bash
-python biss.py setup-pgsrip install
+biss setup-pgsrip install
 
 Installing PGS conversion components...
 ✓ Downloading PGSRip...
@@ -78,7 +78,7 @@ Installation complete! PGS conversion is now available.
 
 **Step 3: Verify Installation**
 ```bash
-python biss.py setup-pgsrip check
+biss setup-pgsrip check
 
 PGSRip Installation Status:
 ✓ PGSRip: Installed (v1.0.2)
@@ -128,7 +128,7 @@ tesseract --list-langs
 
 **CLI Command:**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim
+biss convert-pgs movie.mkv --language chi_sim
 ```
 
 **Interactive Mode:**
@@ -157,7 +157,7 @@ movie.mkv → movie.chi_tra.srt (Chinese Traditional)
 
 **Process multiple files:**
 ```bash
-python biss.py batch-convert-pgs /media/movies --language chi_sim --recursive
+biss batch-convert-pgs /media/movies --language chi_sim --recursive
 ```
 
 **Interactive batch processing:**
@@ -172,25 +172,25 @@ python biss.py batch-convert-pgs /media/movies --language chi_sim --recursive
 
 **High Quality (Slower):**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim --quality high
+biss convert-pgs movie.mkv --language chi_sim --quality high
 ```
 
 **Fast Processing (Lower Quality):**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim --quality fast
+biss convert-pgs movie.mkv --language chi_sim --quality fast
 ```
 
 ### Custom Output Paths
 
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim --output custom-name.srt
+biss convert-pgs movie.mkv --language chi_sim --output custom-name.srt
 ```
 
 ### Track Selection
 
 **List available PGS tracks:**
 ```bash
-python biss.py convert-pgs movie.mkv --list-tracks
+biss convert-pgs movie.mkv --list-tracks
 
 Available PGS tracks:
 Track 3: PGS (Chinese) - 1,247 images
@@ -200,14 +200,14 @@ Track 5: PGS (Japanese) - 1,251 images
 
 **Select specific track:**
 ```bash
-python biss.py convert-pgs movie.mkv --track 3 --language chi_sim
+biss convert-pgs movie.mkv --track 3 --language chi_sim
 ```
 
 ### Processing Options
 
 **Preprocessing filters:**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim \
+biss convert-pgs movie.mkv --language chi_sim \
   --denoise \
   --enhance-contrast \
   --upscale 2x
@@ -215,7 +215,7 @@ python biss.py convert-pgs movie.mkv --language chi_sim \
 
 **OCR confidence threshold:**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim --confidence 0.8
+biss convert-pgs movie.mkv --language chi_sim --confidence 0.8
 ```
 
 ## Integration with Bilingual Merging
@@ -225,28 +225,28 @@ python biss.py convert-pgs movie.mkv --language chi_sim --confidence 0.8
 When no text-based subtitles are available, the system automatically attempts PGS conversion:
 
 ```bash
-python biss.py merge movie.mkv
+biss merge movie.mkv
 # If no SRT/ASS tracks found, automatically converts PGS
 ```
 
 ### Force PGS Conversion
 
 ```bash
-python biss.py merge movie.mkv --force-pgs --pgs-language chi_sim
+biss merge movie.mkv --force-pgs --pgs-language chi_sim
 ```
 
 ### PGS + External File Merging
 
 ```bash
 # Convert PGS to Chinese, merge with external English
-python biss.py merge movie.mkv --force-pgs --pgs-language chi_sim \
+biss merge movie.mkv --force-pgs --pgs-language chi_sim \
   --english external-english.srt
 ```
 
 ### Batch Processing with PGS
 
 ```bash
-python biss.py batch-merge "Season 01" --force-pgs --pgs-language chi_sim \
+biss batch-merge "Season 01" --force-pgs --pgs-language chi_sim \
   --auto-confirm
 ```
 
@@ -257,14 +257,14 @@ python biss.py batch-merge "Season 01" --force-pgs --pgs-language chi_sim \
 #### Issue: "PGSRip not installed"
 **Solution:**
 ```bash
-python biss.py setup-pgsrip install
+biss setup-pgsrip install
 ```
 
 #### Issue: "No PGS tracks found"
 **Solution:**
 ```bash
 # List all tracks to verify
-python biss.py convert-pgs movie.mkv --list-tracks
+biss convert-pgs movie.mkv --list-tracks
 
 # Check if tracks are actually SUP format
 ffprobe -v quiet -show_streams movie.mkv | grep codec_name
@@ -274,30 +274,30 @@ ffprobe -v quiet -show_streams movie.mkv | grep codec_name
 **Solutions:**
 ```bash
 # Try different language model
-python biss.py convert-pgs movie.mkv --language eng
+biss convert-pgs movie.mkv --language eng
 
 # Use high quality mode
-python biss.py convert-pgs movie.mkv --language chi_sim --quality high
+biss convert-pgs movie.mkv --language chi_sim --quality high
 
 # Enable preprocessing
-python biss.py convert-pgs movie.mkv --language chi_sim --denoise --enhance-contrast
+biss convert-pgs movie.mkv --language chi_sim --denoise --enhance-contrast
 ```
 
 #### Issue: "Conversion is very slow"
 **Solutions:**
 ```bash
 # Use fast mode
-python biss.py convert-pgs movie.mkv --language chi_sim --quality fast
+biss convert-pgs movie.mkv --language chi_sim --quality fast
 
 # Process smaller segments
-python biss.py convert-pgs movie.mkv --language chi_sim --segment-size 100
+biss convert-pgs movie.mkv --language chi_sim --segment-size 100
 ```
 
 ### Debug Mode
 
 Enable detailed logging for troubleshooting:
 ```bash
-python biss.py --debug convert-pgs movie.mkv --language chi_sim
+biss --debug convert-pgs movie.mkv --language chi_sim
 ```
 
 ### Log Analysis
@@ -366,24 +366,24 @@ xcode-select --install
 
 **GPU Acceleration (NVIDIA):**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim --gpu-acceleration
+biss convert-pgs movie.mkv --language chi_sim --gpu-acceleration
 ```
 
 **Multi-threading:**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim --threads 8
+biss convert-pgs movie.mkv --language chi_sim --threads 8
 ```
 
 ### Memory Management
 
 **Large Files:**
 ```bash
-python biss.py convert-pgs large-movie.mkv --language chi_sim --memory-limit 4GB
+biss convert-pgs large-movie.mkv --language chi_sim --memory-limit 4GB
 ```
 
 **Batch Processing:**
 ```bash
-python biss.py batch-convert-pgs /media/movies --language chi_sim \
+biss batch-convert-pgs /media/movies --language chi_sim \
   --parallel --max-workers 4
 ```
 
@@ -391,7 +391,7 @@ python biss.py batch-convert-pgs /media/movies --language chi_sim \
 
 **Maximum Quality (Slowest):**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim \
+biss convert-pgs movie.mkv --language chi_sim \
   --quality maximum \
   --denoise \
   --enhance-contrast \
@@ -401,14 +401,14 @@ python biss.py convert-pgs movie.mkv --language chi_sim \
 
 **Balanced (Recommended):**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim \
+biss convert-pgs movie.mkv --language chi_sim \
   --quality high \
   --confidence 0.8
 ```
 
 **Speed Priority (Fastest):**
 ```bash
-python biss.py convert-pgs movie.mkv --language chi_sim \
+biss convert-pgs movie.mkv --language chi_sim \
   --quality fast \
   --confidence 0.6
 ```

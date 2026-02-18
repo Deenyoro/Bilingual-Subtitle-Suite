@@ -147,20 +147,20 @@ Welcome to the comprehensive documentation for the Bilingual Subtitle Suite - a 
 ### Quick Installation
 ```bash
 # Clone repository
-git clone <repository-url>
+git clone https://github.com/Deenyoro/Bilingual-Subtitle-Suite.git
 cd chsub
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Verify installation
-python biss.py --version
+biss --version
 ```
 
 ### Optional Components
 ```bash
 # PGS conversion support
-python biss.py setup-pgsrip install
+biss setup-pgsrip install
 
 # Enhanced encoding detection
 pip install charset-normalizer
@@ -173,37 +173,37 @@ export GOOGLE_TRANSLATE_API_KEY="your-api-key"
 
 ### Interactive Mode (Recommended for Beginners)
 ```bash
-python biss.py
+biss
 ```
 
 ### Command Line (Power Users)
 ```bash
 # Basic bilingual subtitle creation
-python biss.py merge movie.mkv
+biss merge movie.mkv
 
 # Enhanced alignment with manual control
-python biss.py merge movie.mkv --auto-align --manual-align
+biss merge movie.mkv --auto-align --manual-align
 
 # Batch process entire directory
-python biss.py batch-merge "Season 01" --auto-confirm
+biss batch-merge "Season 01" --auto-confirm
 ```
 
 ## 📋 Common Workflows
 
 ### Anime Processing
-1. **Basic Episode**: `python biss.py merge episode.mkv`
-2. **Complex Timing**: `python biss.py merge episode.mkv --auto-align --manual-align`
-3. **Batch Season**: `python biss.py batch-merge "Season 01" --auto-align`
+1. **Basic Episode**: `biss merge episode.mkv`
+2. **Complex Timing**: `biss merge episode.mkv --auto-align --manual-align`
+3. **Batch Season**: `biss batch-merge "Season 01" --auto-align`
 
 ### Movie Processing
-1. **Standard Movie**: `python biss.py merge movie.mkv --auto-align`
-2. **PGS Subtitles**: `python biss.py merge movie.mkv --force-pgs --pgs-language chi_sim`
-3. **High Precision**: `python biss.py merge movie.mkv --auto-align --manual-align --use-translation`
+1. **Standard Movie**: `biss merge movie.mkv --auto-align`
+2. **PGS Subtitles**: `biss merge movie.mkv --force-pgs --pgs-language chi_sim`
+3. **High Precision**: `biss merge movie.mkv --auto-align --manual-align --use-translation`
 
 ### Batch Operations
-1. **Convert Encodings**: `python biss.py batch-convert /media --encoding utf-8 --backup`
-2. **Merge Videos**: `python biss.py batch-merge /media --auto-align --auto-confirm`
-3. **Realign Subtitles**: `python biss.py batch-realign /media --source-ext .zh.srt --reference-ext .en.srt`
+1. **Convert Encodings**: `biss batch-convert /media --encoding utf-8 --backup`
+2. **Merge Videos**: `biss batch-merge /media --auto-align --auto-confirm`
+3. **Realign Subtitles**: `biss batch-realign /media --source-ext .zh.srt --reference-ext .en.srt`
 
 ## 🆘 Getting Help
 
@@ -215,11 +215,11 @@ python biss.py batch-merge "Season 01" --auto-confirm
 ### Debug Information
 ```bash
 # Enable debug mode for detailed logging
-python biss.py --debug --verbose [command]
+biss --debug --verbose [command]
 
 # Check system information
-python biss.py --version
-python biss.py setup-pgsrip check
+biss --version
+biss setup-pgsrip check
 ```
 
 ### Community Support
@@ -229,7 +229,7 @@ python biss.py setup-pgsrip check
 
 ## 📝 Contributing
 
-We welcome contributions to improve the Chinese Subtitle Processor:
+We welcome contributions to improve the Bilingual Subtitle Suite:
 
 - **Bug Reports**: Use GitHub issues with debug information
 - **Feature Requests**: Describe use cases and expected behavior

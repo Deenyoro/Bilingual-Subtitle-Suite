@@ -152,10 +152,10 @@ Unable to detect subtitle language
 **Solutions**:
 ```bash
 # List all tracks manually
-python biss.py merge movie.mkv --list-tracks
+biss merge movie.mkv --list-tracks
 
 # Force track selection
-python biss.py merge movie.mkv --chinese-track 2 --english-track 1
+biss merge movie.mkv --chinese-track 2 --english-track 1
 
 # Check external files
 ls *.srt *.ass *.vtt
@@ -179,7 +179,7 @@ Encoding detection failed
 pip install charset-normalizer
 
 # Force specific encoding
-python biss.py convert subtitle.srt --encoding gb18030 --force
+biss convert subtitle.srt --encoding gb18030 --force
 
 # Check file encoding manually
 file -i subtitle.srt  # Linux/macOS
@@ -205,7 +205,7 @@ ls -la output/
 mkdir -p output/
 
 # Specify different output location
-python biss.py merge movie.mkv --output /tmp/output.srt
+biss merge movie.mkv --output /tmp/output.srt
 
 # Check disk space
 df -h /output/path
@@ -224,16 +224,16 @@ No good alignment points found
 **Solutions**:
 ```bash
 # Use scan strategy for better detection
-python biss.py merge movie.mkv --auto-align --sync-strategy scan
+biss merge movie.mkv --auto-align --sync-strategy scan
 
 # Enable manual alignment
-python biss.py merge movie.mkv --auto-align --manual-align
+biss merge movie.mkv --auto-align --manual-align
 
 # Check if tracks are from same source
-python biss.py merge movie.mkv --list-tracks --debug
+biss merge movie.mkv --list-tracks --debug
 
 # Try different alignment strategies
-python biss.py merge movie.mkv --auto-align --sync-strategy translation --use-translation
+biss merge movie.mkv --auto-align --sync-strategy translation --use-translation
 ```
 
 ### Issue: Major Timing Offsets (50+ Seconds)
@@ -250,17 +250,17 @@ Semantic alignment anchor finding fails
 **Enhanced Solutions**:
 ```bash
 # Enable enhanced mixed track realignment
-python biss.py merge movie.mkv --auto-align --enable-mixed-realignment
+biss merge movie.mkv --auto-align --enable-mixed-realignment
 
 # Use low confidence threshold for large offsets
-python biss.py merge movie.mkv --auto-align --use-translation --alignment-threshold 0.3
+biss merge movie.mkv --auto-align --use-translation --alignment-threshold 0.3
 
 # Combined approach for maximum success rate
-python biss.py merge movie.mkv --auto-align --use-translation \
+biss merge movie.mkv --auto-align --use-translation \
   --alignment-threshold 0.3 --enable-mixed-realignment
 
 # Debug the alignment process
-python biss.py --debug merge movie.mkv --auto-align --use-translation \
+biss --debug merge movie.mkv --auto-align --use-translation \
   --alignment-threshold 0.3 --enable-mixed-realignment
 ```
 
@@ -293,16 +293,16 @@ Low confidence scores in alignment
 **Solutions**:
 ```bash
 # Increase alignment threshold
-python biss.py merge movie.mkv --auto-align --alignment-threshold 0.9
+biss merge movie.mkv --auto-align --alignment-threshold 0.9
 
 # Use manual alignment for precision
-python biss.py merge movie.mkv --auto-align --manual-align
+biss merge movie.mkv --auto-align --manual-align
 
 # Enable translation assistance
-python biss.py merge movie.mkv --auto-align --use-translation
+biss merge movie.mkv --auto-align --use-translation
 
 # Debug alignment process
-python biss.py --debug merge movie.mkv --auto-align
+biss --debug merge movie.mkv --auto-align
 ```
 
 ### Issue: Manual Interface Not Responding
@@ -320,13 +320,13 @@ Input not accepted in manual alignment
 # Terminal.app instead of iTerm2 (macOS)
 
 # Check for input redirection
-python biss.py merge movie.mkv --manual-align < /dev/null
+biss merge movie.mkv --manual-align < /dev/null
 
 # Disable colors if causing issues
-python biss.py --no-colors merge movie.mkv --manual-align
+biss --no-colors merge movie.mkv --manual-align
 
 # Try interactive mode instead
-python biss.py interactive
+biss interactive
 ```
 
 ### Issue: Translation Service Unavailable
@@ -343,13 +343,13 @@ Google Translate API error
 export GOOGLE_TRANSLATE_API_KEY="your-key-here"
 
 # Or pass directly
-python biss.py merge movie.mkv --translation-api-key "your-key"
+biss merge movie.mkv --translation-api-key "your-key"
 
 # Verify API key format and permissions
 # Check Google Cloud Console for quota/billing
 
 # Use without translation as fallback
-python biss.py merge movie.mkv --auto-align --sync-strategy scan
+biss merge movie.mkv --auto-align --sync-strategy scan
 ```
 
 ## PGS Conversion Issues
@@ -368,7 +368,7 @@ Unable to download components
 ping google.com
 
 # Retry installation
-python biss.py setup-pgsrip install
+biss setup-pgsrip install
 
 # Manual installation
 # Download components manually and place in third_party/pgsrip_install/
@@ -388,13 +388,13 @@ Many incorrect characters in output
 **Solutions**:
 ```bash
 # Try different language model
-python biss.py convert-pgs movie.mkv --language eng
+biss convert-pgs movie.mkv --language eng
 
 # Use high quality mode
-python biss.py convert-pgs movie.mkv --language chi_sim --quality high
+biss convert-pgs movie.mkv --language chi_sim --quality high
 
 # Enable preprocessing
-python biss.py convert-pgs movie.mkv --language chi_sim --denoise --enhance-contrast
+biss convert-pgs movie.mkv --language chi_sim --denoise --enhance-contrast
 
 # Check source image quality
 # Higher resolution PGS generally produces better OCR results
@@ -414,7 +414,7 @@ Unable to extract PGS subtitles
 ffprobe -v quiet -show_streams movie.mkv | grep codec_name
 
 # List all subtitle tracks
-python biss.py convert-pgs movie.mkv --list-tracks
+biss convert-pgs movie.mkv --list-tracks
 
 # Check for SUP files (external PGS)
 ls *.sup
@@ -436,13 +436,13 @@ High CPU/memory usage
 **Solutions**:
 ```bash
 # Enable parallel processing
-python biss.py batch-convert /media --parallel --max-workers 4
+biss batch-convert /media --parallel --max-workers 4
 
 # Use fast mode for PGS
-python biss.py convert-pgs movie.mkv --quality fast
+biss convert-pgs movie.mkv --quality fast
 
 # Process smaller batches
-python biss.py batch-merge "subset/" --auto-confirm
+biss batch-merge "subset/" --auto-confirm
 
 # Check system resources
 top    # Linux/macOS
@@ -460,17 +460,17 @@ System becomes unresponsive
 **Solutions**:
 ```bash
 # Process files individually instead of batch
-python biss.py merge movie.mkv
+biss merge movie.mkv
 
 # Reduce worker count
-python biss.py batch-convert /media --parallel --max-workers 2
+biss batch-convert /media --parallel --max-workers 2
 
 # Close other applications
 # Increase virtual memory (Windows)
 # Add swap space (Linux)
 
 # For very large files
-python biss.py merge huge-movie.mkv --stream-mode
+biss merge huge-movie.mkv --stream-mode
 ```
 
 ### Issue: Network/API Timeouts
@@ -490,10 +490,10 @@ ping translate.googleapis.com
 export TRANSLATION_TIMEOUT=60
 
 # Reduce translation requests
-python biss.py merge movie.mkv --translation-limit 5
+biss merge movie.mkv --translation-limit 5
 
 # Use offline mode
-python biss.py merge movie.mkv --auto-align --sync-strategy scan
+biss merge movie.mkv --auto-align --sync-strategy scan
 ```
 
 ## File Format Issues
@@ -607,14 +607,14 @@ Invalid configuration format
 **Solutions**:
 ```bash
 # Create default configuration
-python biss.py --create-config
+biss --create-config
 
 # Validate JSON configuration
 python -m json.tool .subtitle-processor.json
 
 # Reset to defaults
 rm .subtitle-processor.json
-python biss.py --create-config
+biss --create-config
 ```
 
 ### Issue: Logging and Debug Information
@@ -622,17 +622,17 @@ python biss.py --create-config
 **Enable comprehensive debugging**:
 ```bash
 # Maximum debug information
-python biss.py --debug --verbose merge movie.mkv --auto-align --manual-align
+biss --debug --verbose merge movie.mkv --auto-align --manual-align
 
 # Log to file
-python biss.py --debug merge movie.mkv --log-file debug.log
+biss --debug merge movie.mkv --log-file debug.log
 
 # Check log files
 tail -f debug.log
 
 # System information
-python biss.py --version
-python biss.py setup-pgsrip check
+biss --version
+biss setup-pgsrip check
 ```
 
 ## Getting Help
@@ -643,12 +643,12 @@ When reporting issues, include:
 
 ```bash
 # System information
-python biss.py --version
+biss --version
 python --version
 ffmpeg -version
 
 # Error reproduction
-python biss.py --debug --verbose [your-command] 2>&1 | tee error.log
+biss --debug --verbose [your-command] 2>&1 | tee error.log
 
 # File information
 ffprobe -v quiet -show_format -show_streams movie.mkv

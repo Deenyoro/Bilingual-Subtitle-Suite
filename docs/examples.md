@@ -27,13 +27,13 @@ Made in Abyss S02E01.zh.srt
 **CLI Approach**:
 ```bash
 # Basic processing with auto-detection
-python biss.py merge "Made in Abyss S02E01.mkv"
+biss merge "Made in Abyss S02E01.mkv"
 
 # Output: Made in Abyss S02E01.zh-en.srt
 ```
 
 **Interactive Approach**:
-1. Launch: `python biss.py`
+1. Launch: `biss`
 2. Select: "1. Merge Bilingual Subtitles"
 3. Choose: "2. Extract and merge from video file"
 4. Enter video path
@@ -55,7 +55,7 @@ python biss.py merge "Made in Abyss S02E01.mkv"
 
 **Solution with Manual Alignment**:
 ```bash
-python biss.py merge "Made in Abyss S02E02.mkv" --auto-align --manual-align --debug
+biss merge "Made in Abyss S02E02.mkv" --auto-align --manual-align --debug
 ```
 
 **Manual Alignment Process**:
@@ -83,7 +83,7 @@ Enter your choice: 2
 
 **Track Analysis**:
 ```bash
-python biss.py merge anime.mkv --list-tracks
+biss merge anime.mkv --list-tracks
 
 Track 0: English (Score: 95.2) - Main dialogue track
   Events: 1,247 | Title: "English" | Dialogue patterns
@@ -94,7 +94,7 @@ Track 2: Japanese (Score: 88.5) - Main dialogue track
 ```
 
 **Automatic Selection**: System correctly chooses Track 0 for English
-**Manual Override**: `python biss.py merge anime.mkv --english-track 0`
+**Manual Override**: `biss merge anime.mkv --english-track 0`
 
 ## Misaligned Subtitle Processing
 
@@ -115,7 +115,7 @@ Season 02/
 
 **Single Episode Processing**:
 ```bash
-python biss.py merge "Season 02/Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].mkv" \
+biss merge "Season 02/Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Remux FLAC-TTGA].mkv" \
   --auto-align \
   --use-translation \
   --sync-strategy translation \
@@ -150,7 +150,7 @@ Made in Abyss S02E01-The Compass Pointed to the Darkness [1080p Dual Audio BD Re
 
 **Batch Processing Command**:
 ```bash
-python biss.py batch-merge "Season 02" \
+biss batch-merge "Season 02" \
   --auto-align \
   --use-translation \
   --sync-strategy translation \
@@ -200,7 +200,7 @@ Season 02/
 
 **Interactive Processing**:
 ```bash
-python biss.py merge "Made in Abyss S02E01.mkv" \
+biss merge "Made in Abyss S02E01.mkv" \
   --auto-align \
   --use-translation \
   --manual-align \
@@ -249,7 +249,7 @@ Enter your choice (1-3) or 'a' for automatic: 1
 
 **Command**:
 ```bash
-python biss.py batch-align "Season 02" \
+biss batch-align "Season 02" \
   --source-pattern "*.zh.srt" \
   --reference-pattern "*.mkv" \
   --auto-align \
@@ -285,12 +285,12 @@ Season 02/
 
 **Step 1: Setup PGS Conversion**
 ```bash
-python biss.py setup-pgsrip install
+biss setup-pgsrip install
 ```
 
 **Step 2: Convert and Merge**
 ```bash
-python biss.py merge "Batman Ninja (2018).mkv" --force-pgs --pgs-language chi_sim
+biss merge "Batman Ninja (2018).mkv" --force-pgs --pgs-language chi_sim
 ```
 
 **Process**:
@@ -308,7 +308,7 @@ python biss.py merge "Batman Ninja (2018).mkv" --force-pgs --pgs-language chi_si
 
 **Command**:
 ```bash
-python biss.py merge "important-movie.mkv" \
+biss merge "important-movie.mkv" \
   --auto-align \
   --manual-align \
   --use-translation \
@@ -343,7 +343,7 @@ Movie (2023).en.srt
 
 **CLI Processing**:
 ```bash
-python biss.py merge --chinese "Movie (2023).zh.srt" --english "Movie (2023).en.srt" \
+biss merge --chinese "Movie (2023).zh.srt" --english "Movie (2023).en.srt" \
   --output "Movie (2023).bilingual.srt" --auto-align
 ```
 
@@ -372,7 +372,7 @@ Season 01/
 
 **Batch Processing**:
 ```bash
-python biss.py batch-merge "Season 01" --auto-align --auto-confirm
+biss batch-merge "Season 01" --auto-align --auto-confirm
 ```
 
 **Process**:
@@ -396,7 +396,7 @@ Season 01/
 
 **Strategy**: Batch processing with manual intervention
 ```bash
-python biss.py batch-merge "Season 01" --auto-align --manual-align
+biss batch-merge "Season 01" --auto-align --manual-align
 ```
 
 **Process**:
@@ -412,11 +412,11 @@ python biss.py batch-merge "Season 01" --auto-align --manual-align
 **Selective Processing**:
 ```bash
 # Chinese-English bilingual
-python biss.py batch-merge "Season 01" --chinese-pattern "*.zh.srt" \
+biss batch-merge "Season 01" --chinese-pattern "*.zh.srt" \
   --english-pattern "*.en.srt"
 
 # Japanese-English bilingual
-python biss.py batch-merge "Season 01" --chinese-pattern "*.ja.srt" \
+biss batch-merge "Season 01" --chinese-pattern "*.ja.srt" \
   --english-pattern "*.en.srt" --output-suffix ".ja-en"
 ```
 
@@ -438,10 +438,10 @@ Movies/
 **Flexible Processing**:
 ```bash
 # Process each type separately
-python biss.py batch-merge Movies/ --chinese-pattern "*chinese.srt"
-python biss.py batch-merge Movies/ --chinese-pattern "*.zh.srt"
-python biss.py batch-merge Movies/ --chinese-pattern "*_chs.srt"
-python biss.py batch-merge Movies/ --prefer-embedded
+biss batch-merge Movies/ --chinese-pattern "*chinese.srt"
+biss batch-merge Movies/ --chinese-pattern "*.zh.srt"
+biss batch-merge Movies/ --chinese-pattern "*_chs.srt"
+biss batch-merge Movies/ --prefer-embedded
 ```
 
 ### Scenario 2: Mixed Video Formats
@@ -450,17 +450,17 @@ python biss.py batch-merge Movies/ --prefer-embedded
 
 **Universal Processing**:
 ```bash
-python biss.py batch-merge /media/mixed --pattern "*.mkv *.mp4 *.avi *.m4v" \
+biss batch-merge /media/mixed --pattern "*.mkv *.mp4 *.avi *.m4v" \
   --recursive --auto-align
 ```
 
 **Format-Specific Processing**:
 ```bash
 # High-quality MKV files with enhanced alignment
-python biss.py batch-merge /media/mkv --pattern "*.mkv" --auto-align --manual-align
+biss batch-merge /media/mkv --pattern "*.mkv" --auto-align --manual-align
 
 # Standard MP4 files with basic processing
-python biss.py batch-merge /media/mp4 --pattern "*.mp4" --auto-align
+biss batch-merge /media/mp4 --pattern "*.mp4" --auto-align
 ```
 
 ## Batch Processing Strategies
@@ -469,22 +469,22 @@ python biss.py batch-merge /media/mp4 --pattern "*.mp4" --auto-align
 
 **Level 1: Basic Batch Processing**
 ```bash
-python biss.py batch-merge "Content/" --auto-confirm
+biss batch-merge "Content/" --auto-confirm
 ```
 
 **Level 2: Enhanced Alignment**
 ```bash
-python biss.py batch-merge "Content/" --auto-align --auto-confirm
+biss batch-merge "Content/" --auto-align --auto-confirm
 ```
 
 **Level 3: Manual Quality Control**
 ```bash
-python biss.py batch-merge "Content/" --auto-align --manual-align
+biss batch-merge "Content/" --auto-align --manual-align
 ```
 
 **Level 4: Maximum Precision**
 ```bash
-python biss.py batch-merge "Content/" --auto-align --manual-align \
+biss batch-merge "Content/" --auto-align --manual-align \
   --use-translation --alignment-threshold 0.95
 ```
 
@@ -492,19 +492,19 @@ python biss.py batch-merge "Content/" --auto-align --manual-align \
 
 **Anime Content**:
 ```bash
-python biss.py batch-merge "Anime/" --auto-align --manual-align \
+biss batch-merge "Anime/" --auto-align --manual-align \
   --prefer-external --format srt
 ```
 
 **Movie Content**:
 ```bash
-python biss.py batch-merge "Movies/" --auto-align --force-pgs \
+biss batch-merge "Movies/" --auto-align --force-pgs \
   --pgs-language chi_sim --use-translation
 ```
 
 **Documentary Content**:
 ```bash
-python biss.py batch-merge "Documentaries/" --auto-align \
+biss batch-merge "Documentaries/" --auto-align \
   --alignment-threshold 0.9 --use-translation
 ```
 
@@ -512,21 +512,21 @@ python biss.py batch-merge "Documentaries/" --auto-align \
 
 **Phase 1: Quick Pass**
 ```bash
-python biss.py batch-merge "Content/" --auto-align --auto-confirm \
+biss batch-merge "Content/" --auto-align --auto-confirm \
   --alignment-threshold 0.9
 ```
 
 **Phase 2: Manual Review of Failures**
 ```bash
 # Process only files that failed in Phase 1
-python biss.py batch-merge "Content/" --auto-align --manual-align \
+biss batch-merge "Content/" --auto-align --manual-align \
   --pattern "*_failed.mkv"
 ```
 
 **Phase 3: Quality Verification**
 ```bash
 # Spot-check random files
-python biss.py merge "random-sample.mkv" --auto-align --manual-align \
+biss merge "random-sample.mkv" --auto-align --manual-align \
   --use-translation --debug
 ```
 
@@ -536,36 +536,36 @@ python biss.py merge "random-sample.mkv" --auto-align --manual-align \
 
 **Step 1: Track Analysis**
 ```bash
-python biss.py merge sample.mkv --list-tracks --debug
+biss merge sample.mkv --list-tracks --debug
 ```
 
 **Step 2: Test Processing**
 ```bash
-python biss.py merge sample.mkv --auto-align --manual-align --debug
+biss merge sample.mkv --auto-align --manual-align --debug
 ```
 
 **Step 3: Batch Application**
 ```bash
-python biss.py batch-merge "Content/" --auto-align --auto-confirm
+biss batch-merge "Content/" --auto-align --auto-confirm
 ```
 
 ### Workflow 2: Post-Processing Verification
 
 **Step 1: Batch Processing**
 ```bash
-python biss.py batch-merge "Season 01/" --auto-align --auto-confirm
+biss batch-merge "Season 01/" --auto-align --auto-confirm
 ```
 
 **Step 2: Random Sampling**
 ```bash
 # Manually verify random files
-python biss.py merge "Season 01/Episode 05.mkv" --auto-align --manual-align
+biss merge "Season 01/Episode 05.mkv" --auto-align --manual-align
 ```
 
 **Step 3: Issue Resolution**
 ```bash
 # Re-process problematic files with higher precision
-python biss.py merge "problematic-episode.mkv" --auto-align --manual-align \
+biss merge "problematic-episode.mkv" --auto-align --manual-align \
   --use-translation --alignment-threshold 0.95
 ```
 
@@ -581,18 +581,18 @@ python biss.py merge "problematic-episode.mkv" --auto-align --manual-align \
 export GOOGLE_TRANSLATE_API_KEY="your-api-key"
 
 # Process new content
-python biss.py batch-merge "/media/incoming" \
+biss batch-merge "/media/incoming" \
   --auto-align \
   --auto-confirm \
   --recursive
 
 # Clean up old backups
-python biss.py cleanup-backups "/media" \
+biss cleanup-backups "/media" \
   --older-than 7 \
   --recursive
 
 # Generate processing report
-python biss.py --verbose batch-merge "/media/processed" \
+biss --verbose batch-merge "/media/processed" \
   --list-only > daily-report.txt
 ```
 
@@ -607,14 +607,14 @@ import os
 def process_with_quality_control(directory):
     # Phase 1: Automatic processing
     result = subprocess.run([
-        'python', 'biss.py', 'batch-merge', directory,
+        'biss', 'batch-merge', directory,
         '--auto-align', '--auto-confirm', '--alignment-threshold', '0.9'
     ])
 
     if result.returncode != 0:
         # Phase 2: Manual intervention for failures
         subprocess.run([
-            'python', 'biss.py', 'batch-merge', directory,
+            'biss', 'batch-merge', directory,
             '--auto-align', '--manual-align'
         ])
 
@@ -627,13 +627,13 @@ if __name__ == "__main__":
 **PowerShell Script** (`multi-lang.ps1`):
 ```powershell
 # Chinese-English processing
-python biss.py batch-merge "Content/" --auto-align --auto-confirm
+biss batch-merge "Content/" --auto-align --auto-confirm
 
 # Japanese-English processing
-python biss.py batch-merge "Content/" --chinese-pattern "*.ja.srt" `
+biss batch-merge "Content/" --chinese-pattern "*.ja.srt" `
   --output-suffix ".ja-en" --auto-align --auto-confirm
 
 # Korean-English processing
-python biss.py batch-merge "Content/" --chinese-pattern "*.ko.srt" `
+biss batch-merge "Content/" --chinese-pattern "*.ko.srt" `
   --output-suffix ".ko-en" --auto-align --auto-confirm
 ```

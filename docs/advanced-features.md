@@ -38,7 +38,7 @@ After global synchronization, the system performs detailed alignment:
 
 **CLI:**
 ```bash
-python biss.py merge movie.mkv --auto-align
+biss merge movie.mkv --auto-align
 ```
 
 **Interactive Mode:**
@@ -51,7 +51,7 @@ Enable enhanced alignment? (y/n): y
 
 #### Strategy A: First-Line Comparison
 ```bash
-python biss.py merge movie.mkv --auto-align --sync-strategy first-line
+biss merge movie.mkv --auto-align --sync-strategy first-line
 ```
 - Compares first subtitle from each track
 - Uses if timing difference ≤ 2.0 seconds
@@ -59,7 +59,7 @@ python biss.py merge movie.mkv --auto-align --sync-strategy first-line
 
 #### Strategy B: Scan Forward
 ```bash
-python biss.py merge movie.mkv --auto-align --sync-strategy scan
+biss merge movie.mkv --auto-align --sync-strategy scan
 ```
 - Scans first 10 entries from each track
 - Finds closest matching pair within ±2.0 seconds
@@ -67,7 +67,7 @@ python biss.py merge movie.mkv --auto-align --sync-strategy scan
 
 #### Strategy C: Translation-Assisted
 ```bash
-python biss.py merge movie.mkv --auto-align --sync-strategy translation --use-translation
+biss merge movie.mkv --auto-align --sync-strategy translation --use-translation
 ```
 - Uses Google Translate API for semantic matching
 - Identifies content-based matches within first 10 entries
@@ -75,7 +75,7 @@ python biss.py merge movie.mkv --auto-align --sync-strategy translation --use-tr
 
 #### Strategy D: Manual Selection
 ```bash
-python biss.py merge movie.mkv --auto-align --manual-align
+biss merge movie.mkv --auto-align --manual-align
 ```
 - Interactive user interface
 - Shows first 5 subtitle options with translations
@@ -92,7 +92,7 @@ export GOOGLE_TRANSLATE_API_KEY="your-api-key-here"
 
 **CLI Parameter:**
 ```bash
-python biss.py merge movie.mkv --use-translation --translation-api-key "your-key"
+biss merge movie.mkv --use-translation --translation-api-key "your-key"
 ```
 
 ### How It Works
@@ -113,18 +113,18 @@ python biss.py merge movie.mkv --use-translation --translation-api-key "your-key
 
 **Basic translation-assisted alignment:**
 ```bash
-python biss.py merge anime.mkv --auto-align --use-translation
+biss merge anime.mkv --auto-align --use-translation
 ```
 
 **High-precision with translation:**
 ```bash
-python biss.py merge movie.mkv --auto-align --use-translation \
+biss merge movie.mkv --auto-align --use-translation \
   --sync-strategy translation --alignment-threshold 0.95
 ```
 
 **Batch processing with translation:**
 ```bash
-python biss.py batch-merge "Season 01" --auto-align --use-translation \
+biss batch-merge "Season 01" --auto-align --use-translation \
   --auto-confirm
 ```
 
@@ -151,7 +151,7 @@ The manual synchronization interface provides:
 
 #### 1. Enable Manual Mode
 ```bash
-python biss.py merge video.mkv --auto-align --manual-align
+biss merge video.mkv --auto-align --manual-align
 ```
 
 #### 2. Review Anchor Options
@@ -264,7 +264,7 @@ The system uses a sophisticated scoring algorithm to identify the best subtitle 
 
 **Automatic Selection:**
 ```bash
-python biss.py merge movie.mkv --list-tracks
+biss merge movie.mkv --list-tracks
 
 Track Analysis Results:
 Track 0: English (Score: 95.2) - Main dialogue track
@@ -279,7 +279,7 @@ Recommended: English Track 0, Chinese Track 2
 
 **Manual Override:**
 ```bash
-python biss.py merge movie.mkv --english-track 1 --chinese-track 2
+biss merge movie.mkv --english-track 1 --chinese-track 2
 ```
 
 ## Global Track Synchronization
@@ -297,22 +297,22 @@ The system automatically prioritizes tracks for timing reference:
 
 **Simple Strategy**: Direct first-line comparison
 ```bash
-python biss.py merge movie.mkv --auto-align --sync-strategy first-line
+biss merge movie.mkv --auto-align --sync-strategy first-line
 ```
 
 **Scan Strategy**: Multi-point analysis
 ```bash
-python biss.py merge movie.mkv --auto-align --sync-strategy scan
+biss merge movie.mkv --auto-align --sync-strategy scan
 ```
 
 **Translation Strategy**: Semantic matching
 ```bash
-python biss.py merge movie.mkv --auto-align --sync-strategy translation --use-translation
+biss merge movie.mkv --auto-align --sync-strategy translation --use-translation
 ```
 
 **Manual Strategy**: User-guided selection
 ```bash
-python biss.py merge movie.mkv --auto-align --sync-strategy manual
+biss merge movie.mkv --auto-align --sync-strategy manual
 ```
 
 ### Mixed Track Type Handling
@@ -355,7 +355,7 @@ When processing mixed embedded and external tracks:
 
 **High-Precision Settings**:
 ```bash
-python biss.py merge movie.mkv --auto-align \
+biss merge movie.mkv --auto-align \
   --alignment-threshold 0.95 \
   --time-threshold 0.3 \
   --similarity-threshold 0.8
@@ -363,7 +363,7 @@ python biss.py merge movie.mkv --auto-align \
 
 **Flexible Settings**:
 ```bash
-python biss.py merge movie.mkv --auto-align \
+biss merge movie.mkv --auto-align \
   --alignment-threshold 0.6 \
   --time-threshold 1.0 \
   --similarity-threshold 0.5
@@ -420,7 +420,7 @@ Create `.subtitle-processor.json` in your home directory:
 **Complex Workflow Example**:
 ```bash
 # High-precision anime processing with all features
-python biss.py merge anime.mkv \
+biss merge anime.mkv \
   --auto-align \
   --manual-align \
   --use-translation \
@@ -435,7 +435,7 @@ python biss.py merge anime.mkv \
 **Batch Processing with Fallbacks**:
 ```bash
 # Process with PGS fallback and translation assistance
-python biss.py batch-merge "Season 01" \
+biss batch-merge "Season 01" \
   --auto-align \
   --use-translation \
   --force-pgs \
@@ -447,7 +447,7 @@ python biss.py batch-merge "Season 01" \
 **Debugging and Analysis**:
 ```bash
 # Comprehensive analysis mode
-python biss.py merge movie.mkv \
+biss merge movie.mkv \
   --list-tracks \
   --debug \
   --verbose \
@@ -460,18 +460,18 @@ python biss.py merge movie.mkv \
 
 **Parallel Processing**:
 ```bash
-python biss.py batch-convert /media/subtitles --parallel --max-workers 8
+biss batch-convert /media/subtitles --parallel --max-workers 8
 ```
 
 **Translation Caching**:
 ```bash
-python biss.py merge movie.mkv --use-translation --translation-cache
+biss merge movie.mkv --use-translation --translation-cache
 ```
 
 **Memory Management**:
 ```bash
 # For large files, use streaming mode
-python biss.py merge large-movie.mkv --stream-mode --chunk-size 1000
+biss merge large-movie.mkv --stream-mode --chunk-size 1000
 ```
 
 ### Integration with External Tools
@@ -479,7 +479,7 @@ python biss.py merge large-movie.mkv --stream-mode --chunk-size 1000
 **Plex Integration**:
 ```bash
 # Plex-compatible naming and format
-python biss.py batch-merge /media/plex-library \
+biss batch-merge /media/plex-library \
   --format srt \
   --plex-naming \
   --recursive
@@ -488,7 +488,7 @@ python biss.py batch-merge /media/plex-library \
 **Media Server Workflows**:
 ```bash
 # Automated processing for media servers
-python biss.py batch-merge /media/incoming \
+biss batch-merge /media/incoming \
   --auto-align \
   --auto-confirm \
   --cleanup-backups \

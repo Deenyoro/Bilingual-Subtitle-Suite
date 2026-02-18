@@ -18,13 +18,13 @@ Complete guide to using the Bilingual Subtitle Suite's interactive menu-driven i
 ### Launching Interactive Mode
 ```bash
 # Default launch (interactive mode)
-python biss.py
+biss
 
 # Explicit interactive mode
-python biss.py interactive
+biss interactive
 
 # Interactive mode without colors
-python biss.py --no-colors interactive
+biss --no-colors interactive
 ```
 
 ### Navigation
@@ -39,7 +39,7 @@ When you launch interactive mode, you'll see the main menu:
 
 ```
 ================================================================================
-Bilingual Subtitle Suite v2.0.0
+Bilingual Subtitle Suite v2.1.0
 ================================================================================
 
 Main Menu:
