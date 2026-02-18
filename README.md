@@ -1,237 +1,301 @@
-# 双语字幕工具箱 (BISS)
+# Bilingual Subtitle Suite (BISS)
 
-![双语字幕工具箱 Logo](images/biss-logo.png)
+![Bilingual Subtitle Suite Logo](images/biss-logo.png)
 
-一个功能强大的双语字幕制作工具，支持从视频文件和独立字幕文件创建双语字幕。支持中英、日英、韩英等多种语言组合，具备自动语言检测、智能轨道选择和时间轴对齐功能。
+A powerful toolkit for creating bilingual subtitles from video files and standalone subtitle files. Supports Chinese-English, Japanese-English, Korean-English and other language combinations with automatic language detection, intelligent track selection, and timing alignment.
 
-**[GitHub 主仓库](https://github.com/Deenyoro/Bilingual-Subtitle-Suite)** | **[English Documentation](README.en.md)**
+**[Gitee Mirror (中国镜像)](https://gitee.com/kawadean/bilingual-subtitle-suite)** | **[中文文档](README.zh.md)**
 
-## 下载
+## Download
 
-从 [GitHub Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases/latest) 下载最新版本。
+Download the latest release from [GitHub Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases/latest).
 
-| 文件 | 说明 | 大小 |
-|------|------|------|
-| **`biss.exe`** | 精简版 — 包含所有功能（PGS OCR 除外） | ~20 MB |
-| **`biss-full.exe`** | 完整版 — 包含 PGS OCR 和 Tesseract 数据（eng, chi_sim, chi_tra, jpn, kor） | ~110 MB |
+| File | Description | Approx. Size |
+|------|-------------|--------------|
+| **`biss.exe`** | Lite build — all features except PGS OCR | ~20 MB |
+| **`biss-full.exe`** | Full build — includes PGS OCR with bundled Tesseract data (eng, chi_sim, chi_tra, jpn, kor) | ~110 MB |
 
-> **应该下载哪个版本？**
-> 大多数用户应下载 **`biss.exe`**（精简版）。它支持字幕合并、对齐、编码转换、批量处理以及完整的 GUI/CLI 界面。仅当需要通过 OCR 转换 PGS（蓝光影像）字幕时，才需要下载 **`biss-full.exe`**。
+> **Which one should I download?**
+> Most users should start with **`biss.exe`**. It handles subtitle merging, alignment, encoding conversion, batch processing, and the full GUI/CLI. Download **`biss-full.exe`** only if you need to convert PGS (Blu-ray image-based) subtitles to text via OCR.
 
-## 效果展示
+## Example Output
 
-![双语字幕效果示例](images/biss-fma03.png)
-*BISS 制作的中英双语字幕*
+![Example Bilingual Subtitle Output](images/biss-fma03.png)
+*Bilingual Chinese-English subtitles created by BISS*
 
-## 功能特性
+## Features
 
-### 双语字幕制作
-- **自动语言检测**：从文件名和内容分析中识别语言
-- **智能轨道选择**：区分主对话和强制/标牌字幕轨道
-- **时间轴对齐**：自动处理轨道之间的时间差异
-- **翻译辅助匹配**：可选 Google Cloud Translation API 进行语义对齐
-- **多语言支持**：中文、日文、韩文与英文配对
+### Bilingual Subtitle Creation
+- **Automatic Language Detection**: Identifies languages from filenames and content analysis
+- **Smart Track Selection**: Distinguishes main dialogue from forced/signs-only tracks
+- **Timing Alignment**: Handles timing differences between tracks automatically
+- **Translation-Assisted Matching**: Optional Google Cloud Translation API for semantic alignment
+- **Multiple Language Support**: Chinese, Japanese, Korean paired with English
 
-### 处理能力
-- **视频容器支持**：从 MKV、MP4、AVI、MOV、WebM、TS 中提取内嵌字幕
-- **字幕格式**：SRT、ASS/SSA、VTT 输入输出
-- **PGS 转换**：基于 OCR 的图像字幕转换（完整版或系统 Tesseract）
-- **编码转换**：自动检测并转换为 UTF-8
-- **时间轴调整**：按偏移量移动字幕或设定起始时间
-- **批量处理**：单条命令处理整个目录
+### Processing Capabilities
+- **Video Container Support**: Extract embedded subtitles from MKV, MP4, AVI, MOV, WebM, TS
+- **Subtitle Formats**: SRT, ASS/SSA, VTT input and output
+- **PGS Conversion**: OCR-based conversion of image subtitles (full build or system Tesseract)
+- **Encoding Conversion**: Automatic detection and UTF-8 conversion
+- **Timing Adjustment**: Shift subtitles by offset or set specific start times
+- **Batch Processing**: Process entire directories with single commands
 
-### 用户界面
-- **图形界面**：全功能 GUI，支持拖放、预览和可视化反馈
-- **命令行**：可脚本化的 CLI，选项丰富
-- **交互模式**：菜单驱动的文本界面，引导操作流程
+### User Interfaces
+- **Graphical Interface**: Full-featured GUI with drag-and-drop, preview, and visual feedback
+- **Command Line**: Scriptable CLI with comprehensive options
+- **Interactive Mode**: Menu-driven text interface for guided workflows
 
-## 多语言界面
+## Installation from Source
 
-```bash
-biss --lang zh          # 中文界面
-biss --lang ja          # 日本語インターフェース
-biss --lang ko          # 한국어 인터페이스biss --lang en          # English interface
-```
+> **Note:** If you downloaded a pre-built exe from the [Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases/latest) page, skip this section. Just run the exe directly — no Python or pip required.
 
-应用会自动检测系统语言。设置环境变量 `BISS_LANG=zh` 可永久选择中文界面。
+### Requirements
+- Python 3.8 or higher (3.10+ recommended)
+- FFmpeg installed and available in PATH
+- Git (for cloning)
 
-## 从源码安装
-
-> **注意：** 如果您从 [Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases/latest) 页面下载了预编译的 exe 文件，请跳过此部分。直接运行 exe 即可，无需安装 Python。
-
-### 系统要求
-- Python 3.8 或更高版本（推荐 3.10+）
-- 已安装 FFmpeg 并添加到 PATH
-- Git（用于克隆仓库）
-
-### 安装步骤
+### Setup
 ```bash
 git clone https://github.com/Deenyoro/Bilingual-Subtitle-Suite.git
 cd chsub
 pip install -r requirements.txt
 
-# 验证安装
+# Verify installation
 biss --version
-# 从源码运行：
+# Or, if running from source:
 python biss.py --version
 ```
 
-### 可选：PGS 字幕转换
+### Optional: PGS Subtitle Conversion
 ```bash
 biss setup-pgsrip install
 ```
 
-## 使用方法
+## Usage
 
-> **从源码运行？** 将下文中的 `biss` 替换为 `python biss.py`。
+> **Running from source?** Substitute `python biss.py` wherever you see `biss` below.
 
-### 图形界面（推荐新手使用）
+### Multi-Language UI
+```bash
+biss --lang zh          # Chinese interface (中文界面)
+biss --lang ja          # Japanese interface (日本語)
+biss --lang ko          # Korean interface (한국어)
+```
+The app auto-detects your system language. Set `BISS_LANG=zh` as an environment variable for persistent selection.
+
+### Graphical Interface (Recommended for Beginners)
 ```bash
 biss gui
-# 或直接：
+# Or simply:
 biss
 ```
 
-GUI 提供：
-- 合并、调整、转换和批量操作的选项卡界面
-- Ctrl+P 文件预览
-- 自动语言检测标签
-- 快速偏移按钮
-- 实时操作日志
+The GUI provides:
+- Tabbed interface for Merge, Shift, Convert, and Batch operations
+- File preview with Ctrl+P
+- Automatic language detection labels
+- Quick offset buttons for timing adjustment
+- Real-time operation logging
 
-### 命令行
+### Command Line
 
-**合并两个字幕文件：**
+**Merge subtitles from two files:**
 ```bash
 biss merge chinese.srt english.srt
 ```
-自动从文件名（.zh、.chi、.en、.eng 等）或内容检测语言。
+Languages are detected automatically from filenames (.zh, .chi, .en, .eng, etc.) or content.
 
-**从视频提取并合并：**
+**Extract and merge from video:**
 ```bash
 biss merge movie.mkv
 ```
-提取内嵌的中英字幕轨道并创建双语输出。
+Extracts embedded Chinese and English tracks and creates bilingual output.
 
-**调整字幕时间轴：**
+**Shift subtitle timing:**
 ```bash
-# 后移 2.5 秒
+# Shift back 2.5 seconds
 biss shift subtitle.srt --offset="-2.5s"
 
-# 前移 500 毫秒
+# Shift forward 500 milliseconds
 biss shift subtitle.srt --offset 500ms
+
+# Set first subtitle to specific timestamp
+biss shift subtitle.srt --first-line-at "00:01:23,456"
 ```
 
-**转换编码：**
+**Convert encoding:**
 ```bash
 biss convert subtitle.srt
 ```
-自动检测编码并转换为 UTF-8。
+Automatically detects encoding and converts to UTF-8.
 
-**批量操作：**
+**Preview changes without executing:**
 ```bash
-# 合并目录中所有视频
+biss --dry-run merge chinese.srt english.srt
+```
+
+**Batch operations:**
+```bash
+# Merge all videos in directory
 biss batch-merge "Season 01" --auto-confirm
 
-# 将所有字幕转换为 UTF-8
+# Convert all subtitles to UTF-8
 biss batch-convert /path/to/subtitles --recursive
 ```
 
-### 交互模式
+### Interactive Mode
 ```bash
 biss interactive
 ```
-提供菜单驱动的界面，引导完成所有操作。
+Presents a menu-driven interface for all operations.
 
-## 高级选项
+## Advanced Options
 
-### 时间轴不一致时的对齐
+### Alignment for Timing Mismatches
+When subtitle tracks have different timing:
 ```bash
 biss merge movie.mkv --auto-align
 ```
 
-大偏移量（50+ 秒）：
+For large timing offsets (50+ seconds):
 ```bash
 biss merge movie.mkv --auto-align --alignment-threshold 0.3
 ```
 
-翻译辅助跨语言匹配：
+With translation assistance for better cross-language matching:
 ```bash
 biss merge movie.mkv --auto-align --use-translation
 ```
 
-### 轨道选择
+### Track Selection
 ```bash
-# 列出可用轨道
+# List available tracks
 biss merge movie.mkv --list-tracks
 
-# 指定轨道 ID
+# Force specific track IDs
 biss merge movie.mkv --chinese-track 3 --english-track 5
 
-# 优先使用外部文件
+# Prefer external files over embedded
 biss merge movie.mkv --prefer-external
 ```
 
-## 支持的格式
-
-| 类型 | 格式 |
-|------|------|
-| 视频 | MKV、MP4、AVI、M4V、MOV、WebM、TS、MPG、MPEG |
-| 字幕 | SRT、ASS、SSA、VTT |
-| 编码 | UTF-8、UTF-16、GB18030、GBK、Big5、Shift-JIS 等 |
-| 语言 | 中文（简体/繁体）、英文、日文、韩文 |
-
-## 配置
-
-### 环境变量
+### Output Control
 ```bash
-# Google Translation API 密钥（可选，用于 --use-translation）
-export GOOGLE_TRANSLATE_API_KEY="your-api-key"
+# Specify output path
+biss merge file1.srt file2.srt -o output.srt
 
-# FFmpeg 超时时间（秒，默认 900）
-export FFMPEG_TIMEOUT=1800
-
-# 界面语言
-export BISS_LANG=zh
+# Choose output format
+biss merge file1.srt file2.srt --format ass
 ```
 
-## 常见问题
+## Project Structure
 
-**找不到 FFmpeg：**
-安装 FFmpeg 并确保已添加到系统 PATH。使用 `ffmpeg -version` 测试。
+```
+biss/
+├── biss.py                    # Main entry point
+├── build.py                   # Build script for Windows exe
+├── biss.spec                  # PyInstaller spec file
+├── core/                      # Core processing modules
+│   ├── subtitle_formats.py    # SRT, ASS, VTT parsing
+│   ├── video_containers.py    # FFmpeg integration
+│   ├── language_detection.py
+│   ├── encoding_detection.py
+│   ├── similarity_alignment.py
+│   ├── translation_service.py
+│   ├── track_analyzer.py
+│   ├── ass_converter.py
+│   └── timing_utils.py
+├── processors/                # High-level operations
+│   ├── merger.py              # Bilingual merging
+│   ├── converter.py           # Encoding conversion
+│   ├── timing_adjuster.py     # Timing adjustment
+│   ├── realigner.py           # Subtitle alignment
+│   ├── splitter.py            # Bilingual splitting
+│   ├── bulk_aligner.py        # Bulk alignment
+│   └── batch_processor.py     # Batch operations
+├── ui/                        # User interfaces
+│   ├── gui.py                 # Tkinter GUI
+│   ├── cli.py                 # Command-line interface
+│   └── interactive.py         # Interactive text mode
+├── utils/                     # Utilities
+│   ├── constants.py           # Shared constants
+│   ├── backup_manager.py      # Backup handling
+│   ├── file_operations.py
+│   └── logging_config.py
+└── third_party/               # External integrations
+    └── pgsrip_wrapper.py      # PGS conversion
+```
 
-**编码检测失败：**
+## Supported Formats
+
+| Type | Formats |
+|------|---------|
+| Video | MKV, MP4, AVI, M4V, MOV, WebM, TS, MPG, MPEG |
+| Subtitles | SRT, ASS, SSA, VTT |
+| Encodings | UTF-8, UTF-16, GB18030, GBK, Big5, Shift-JIS, and more |
+| Languages | Chinese (Simplified/Traditional), English, Japanese, Korean |
+
+## Configuration
+
+### Environment Variables
+```bash
+# Google Translation API key (optional, for --use-translation)
+export GOOGLE_TRANSLATE_API_KEY="your-api-key"
+
+# FFmpeg timeout in seconds (default: 900)
+export FFMPEG_TIMEOUT=1800
+```
+
+### Backup Management
+Backups are created automatically when modifying files in-place. The backup manager keeps the 5 most recent backups per file by default.
+
+```bash
+# Clean up old backups
+biss cleanup-backups /path/to/directory --older-than 30
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**FFmpeg not found:**
+Install FFmpeg and ensure it's in your system PATH. Test with `ffmpeg -version`.
+
+**Encoding detection fails:**
 ```bash
 pip install charset-normalizer
 ```
 
-**输出乱码：**
+**Garbled characters in output:**
+The source file may have incorrect encoding. Try:
 ```bash
 biss convert subtitle.srt --force
 ```
 
-**合并后时间轴不一致：**
+**Timing mismatch after merge:**
+Use alignment options:
 ```bash
 biss merge file1.srt file2.srt --auto-align
 ```
 
-### 调试模式
+### Debug Mode
+For detailed logging:
 ```bash
 biss --debug merge movie.mkv
 ```
 
-## 作者
+## Author
 
 Dean Thomas ([@Deenyoro](https://github.com/Deenyoro))
 
-## 致谢
+## Acknowledgments
 
-本项目集成了以下优秀的开源工具：
+This project integrates several excellent open-source tools:
 
-- **[PGSRip](https://github.com/ratoaq2/pgsrip)** by ratoaq2 — PGS 字幕提取（Apache 2.0）
-- **[Tesseract OCR](https://github.com/tesseract-ocr/tesseract)** — 光学字符识别（Apache 2.0）
-- **[FFmpeg](https://ffmpeg.org/)** — 音视频处理（LGPL/GPL）
+- **[PGSRip](https://github.com/ratoaq2/pgsrip)** by ratoaq2 - PGS subtitle extraction (Apache 2.0)
+- **[Tesseract OCR](https://github.com/tesseract-ocr/tesseract)** - Optical character recognition (Apache 2.0)
+- **[FFmpeg](https://ffmpeg.org/)** - Video/audio processing (LGPL/GPL)
 
-## 许可证
+## License
 
-本项目采用 [Apache License 2.0](LICENSE) 许可证。
+This project is licensed under the [Apache License 2.0](LICENSE).
