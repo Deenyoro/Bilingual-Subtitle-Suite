@@ -58,6 +58,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from utils.constants import APP_NAME, APP_VERSION, APP_DESCRIPTION
 from utils.logging_config import setup_logging
+from utils.i18n import set_locale, detect_system_locale, t
 from ui.cli import CLIHandler
 from ui.interactive import InteractiveInterface
 from third_party import is_pgsrip_available
@@ -117,6 +118,8 @@ For detailed help on any command:
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('-d', '--debug', action='store_true', help='Enable debug output')
     parser.add_argument('--no-colors', action='store_true', help='Disable colored output')
+    parser.add_argument('--lang', choices=['en', 'zh', 'ja', 'ko'], default=None,
+                        help='UI language (en=English, zh=Chinese, ja=Japanese, ko=Korean)')
     
     return parser
 
@@ -128,6 +131,20 @@ def main():
     Handles argument parsing and dispatches to appropriate interface
     (GUI, interactive, or command-line) based on the provided arguments.
     """
+    # Handle --lang flag globally (before any mode dispatch)
+    lang = None
+    for i, arg in enumerate(sys.argv):
+        if arg == '--lang' and i + 1 < len(sys.argv):
+            lang = sys.argv[i + 1]
+            break
+        elif arg.startswith('--lang='):
+            lang = arg.split('=', 1)[1]
+            break
+    if lang:
+        set_locale(lang)
+    else:
+        set_locale(detect_system_locale())
+
     # If no arguments provided, launch GUI mode
     if len(sys.argv) == 1:
         launch_gui_mode()

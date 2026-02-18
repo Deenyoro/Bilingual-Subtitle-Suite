@@ -4,6 +4,8 @@
 
 A powerful toolkit for creating bilingual subtitles from video files and standalone subtitle files. Supports Chinese-English, Japanese-English, Korean-English and other language combinations with automatic language detection, intelligent track selection, and timing alignment.
 
+**[Gitee Mirror (中国镜像)](https://gitee.com/kawadean/bilingual-subtitle-suite)** | **[中文文档](https://gitee.com/kawadean/bilingual-subtitle-suite/blob/master/README.md)**
+
 ## Download
 
 Download the latest release from [GitHub Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases/latest).
@@ -72,6 +74,14 @@ biss setup-pgsrip install
 ## Usage
 
 > **Running from source?** Substitute `python biss.py` wherever you see `biss` below.
+
+### Multi-Language UI
+```bash
+biss --lang zh          # Chinese interface (中文界面)
+biss --lang ja          # Japanese interface (日本語)
+biss --lang ko          # Korean interface (한국어)
+```
+The app auto-detects your system language. Set `BISS_LANG=zh` as an environment variable for persistent selection.
 
 ### Graphical Interface (Recommended for Beginners)
 ```bash

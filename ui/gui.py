@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.constants import APP_NAME, APP_VERSION, VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS
 from utils.logging_config import get_logger
+from utils.i18n import t
 
 logger = get_logger(__name__)
 
@@ -231,7 +232,7 @@ class BISSGui:
         info_frame.pack(side=tk.RIGHT)
 
         ttk.Label(info_frame, text=f"v{APP_VERSION}", style='Subtitle.TLabel').pack(anchor='e')
-        ttk.Label(info_frame, text="Create bilingual subtitles easily",
+        ttk.Label(info_frame, text=t('app.tagline'),
                  style='Subtitle.TLabel').pack(anchor='e')
 
     def _create_text_header(self, parent):
@@ -251,13 +252,13 @@ class BISSGui:
 
         # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Open Subtitle...", command=self._open_subtitle, accelerator="Ctrl+O")
-        file_menu.add_command(label="Open Video...", command=self._open_video)
+        menubar.add_cascade(label=t('gui.file_menu'), menu=file_menu)
+        file_menu.add_command(label=t('gui.open_subtitle'), command=self._open_subtitle, accelerator="Ctrl+O")
+        file_menu.add_command(label=t('gui.open_video'), command=self._open_video)
         file_menu.add_separator()
-        file_menu.add_command(label="Preview Subtitle...", command=lambda: self._show_subtitle_preview(), accelerator="Ctrl+P")
+        file_menu.add_command(label=t('gui.preview'), command=lambda: self._show_subtitle_preview(), accelerator="Ctrl+P")
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.quit, accelerator="Alt+F4")
+        file_menu.add_command(label=t('gui.exit'), command=self.root.quit, accelerator="Alt+F4")
 
         # Bind keyboard shortcuts
         self.root.bind('<Control-o>', lambda e: self._open_subtitle())
@@ -265,21 +266,21 @@ class BISSGui:
 
         # Tools menu
         tools_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Tools", menu=tools_menu)
-        tools_menu.add_command(label="Merge Subtitles", command=lambda: self.notebook.select(0))
-        tools_menu.add_command(label="Extract Tracks", command=lambda: self.notebook.select(1))
-        tools_menu.add_command(label="Shift Timing", command=lambda: self.notebook.select(2))
-        tools_menu.add_command(label="Convert Encoding", command=lambda: self.notebook.select(3))
+        menubar.add_cascade(label=t('gui.tools_menu'), menu=tools_menu)
+        tools_menu.add_command(label=t('gui.merge_subtitles'), command=lambda: self.notebook.select(0))
+        tools_menu.add_command(label=t('gui.extract_tracks'), command=lambda: self.notebook.select(1))
+        tools_menu.add_command(label=t('gui.shift_timing'), command=lambda: self.notebook.select(2))
+        tools_menu.add_command(label=t('gui.convert_encoding'), command=lambda: self.notebook.select(3))
         tools_menu.add_separator()
-        tools_menu.add_command(label="Batch Operations", command=lambda: self.notebook.select(4))
+        tools_menu.add_command(label=t('gui.batch_operations'), command=lambda: self.notebook.select(4))
 
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Help", menu=help_menu)
-        help_menu.add_command(label="Quick Guide", command=self._show_help)
-        help_menu.add_command(label="Keyboard Shortcuts", command=self._show_shortcuts)
+        menubar.add_cascade(label=t('gui.help_menu'), menu=help_menu)
+        help_menu.add_command(label=t('gui.quick_guide'), command=self._show_help)
+        help_menu.add_command(label=t('gui.shortcuts'), command=self._show_shortcuts)
         help_menu.add_separator()
-        help_menu.add_command(label="About", command=self._show_about)
+        help_menu.add_command(label=t('gui.about'), command=self._show_about)
 
     def _create_main_interface(self):
         """Create the main tabbed interface."""
@@ -300,7 +301,7 @@ class BISSGui:
         self._create_batch_tab()
 
         # Log output area
-        log_frame = ttk.LabelFrame(main_frame, text="Output Log", padding="5")
+        log_frame = ttk.LabelFrame(main_frame, text=t('gui.output_log'), padding="5")
         log_frame.pack(fill=tk.X, pady=(10, 0))
 
         self.log_text = scrolledtext.ScrolledText(log_frame, height=6, state='disabled',
@@ -310,7 +311,7 @@ class BISSGui:
         # Log controls
         log_controls = ttk.Frame(log_frame)
         log_controls.pack(fill=tk.X, pady=(2, 0))
-        ttk.Button(log_controls, text="Clear", command=self._clear_log, width=8).pack(side=tk.RIGHT)
+        ttk.Button(log_controls, text=t('gui.clear'), command=self._clear_log, width=8).pack(side=tk.RIGHT)
 
     def _create_merge_tab(self):
         """Create the Merge Subtitles tab - Primary function."""

@@ -109,6 +109,8 @@ For detailed help on any command:
         parser.add_argument('-d', '--debug', action='store_true', help='Enable debug output')
         parser.add_argument('--dry-run', action='store_true',
                           help='Show what would be done without making changes')
+        parser.add_argument('--lang', choices=['en', 'zh', 'ja', 'ko'], default=None,
+                          help='UI language (en/zh/ja/ko)')
         
         # Create subparsers for different operations
         subparsers = parser.add_subparsers(dest='command', help='Available commands')
