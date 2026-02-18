@@ -468,11 +468,11 @@ class BISSGui:
         row1.pack(fill=tk.X, pady=(0, 5))
 
         self.merge_autoalign_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(row1, text="Auto-align (fix timing mismatches)",
+        ttk.Checkbutton(row1, text="Auto-align (names, numbers, similarity)",
                        variable=self.merge_autoalign_var).pack(side=tk.LEFT)
 
         self.merge_translation_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(row1, text="Use translation API for matching",
+        ttk.Checkbutton(row1, text="Use translation API",
                        variable=self.merge_translation_var).pack(side=tk.LEFT, padx=(20, 0))
 
         # Row 2: Format and threshold

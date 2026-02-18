@@ -10,7 +10,7 @@ from typing import List, Optional, Tuple, Dict, Callable
 from core.subtitle_formats import SubtitleEvent, SubtitleFile, SubtitleFormatFactory
 from core.video_containers import VideoContainerHandler
 from core.language_detection import LanguageDetector
-from core.similarity_alignment import SimilarityAligner, AlignmentMatch
+from core.similarity_alignment import SimilarityAligner, AlignmentMatch, MultiAnchorAligner
 from core.translation_service import get_translation_service, GoogleTranslationService
 from utils.constants import DEFAULT_GAP_THRESHOLD, CHINESE_CODES, ENGLISH_CODES
 from utils.logging_config import get_logger
@@ -1187,6 +1187,41 @@ class BilingualMerger:
         """
         logger.info("🔍 SEMANTIC ANCHOR SEARCH: Finding alignment point using content similarity")
 
+        # --- Multi-anchor strategy (proper noun / number matching) ---
+        try:
+            same_language = self._detect_tracks_same_language(embedded_events, external_events)
+            aligner = MultiAnchorAligner(min_anchors=3)
+            anchors = aligner.find_anchors(embedded_events, external_events,
+                                           same_language=same_language)
+            if anchors:
+                result = aligner.compute_robust_offset(anchors)
+                if result is not None:
+                    median_offset, ma_confidence = result
+                    if ma_confidence >= 0.5:
+                        # Pick the best individual anchor for index reporting
+                        best_anchor = max(anchors, key=lambda a: a.confidence)
+                        # Convention: offset = embedded.start - external.start
+                        # MultiAnchorAligner computes reference.start - source.start
+                        # where source=embedded, reference=external, so negate
+                        caller_offset = -median_offset
+                        logger.info(f"🎯 MULTI-ANCHOR alignment succeeded: "
+                                    f"offset={caller_offset:.3f}s, "
+                                    f"confidence={ma_confidence:.3f}, "
+                                    f"anchors={len(anchors)}")
+                        # Return (embedded_idx, external_idx, confidence, offset)
+                        # source_index = embedded, reference_index = external
+                        return (best_anchor.source_index,
+                                best_anchor.reference_index,
+                                ma_confidence,
+                                caller_offset)
+                    else:
+                        logger.info(f"Multi-anchor confidence too low ({ma_confidence:.3f}), "
+                                    f"falling through to other strategies")
+            else:
+                logger.info("Multi-anchor found no anchors, falling through")
+        except Exception as e:
+            logger.warning(f"Multi-anchor alignment failed: {e}")
+
         # Expand search scope for large timing offsets (up to 40 events)
         search_limit_embedded = min(40, len(embedded_events))
         search_limit_external = min(40, len(external_events))
@@ -1342,6 +1377,30 @@ class BilingualMerger:
             logger.warning("❌ No suitable semantic anchor point found")
             logger.warning("   Minimum confidence threshold (0.15) not met")
             return None
+
+    def _detect_tracks_same_language(self, track_a_events: List[SubtitleEvent],
+                                      track_b_events: List[SubtitleEvent]) -> bool:
+        """
+        Detect whether two subtitle tracks are in the same language by sampling event text.
+
+        Args:
+            track_a_events: First track events
+            track_b_events: Second track events
+
+        Returns:
+            True if both tracks appear to be the same language
+        """
+        def sample_language(events, n=10):
+            step = max(1, len(events) // n)
+            sampled = [events[i].text for i in range(0, len(events), step)][:n]
+            combined = ' '.join(sampled)
+            return LanguageDetector.detect_language(combined)
+
+        lang_a = sample_language(track_a_events)
+        lang_b = sample_language(track_b_events)
+        same = lang_a == lang_b and lang_a != 'unknown'
+        logger.debug(f"Track language detection: A={lang_a}, B={lang_b}, same={same}")
+        return same
 
     def _log_realignment_plan(self, embedded_events: List[SubtitleEvent],
                             external_events: List[SubtitleEvent],
