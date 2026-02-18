@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 from utils.constants import APP_NAME, APP_VERSION
 from utils.logging_config import setup_logging
+from utils.i18n import t
 from processors.merger import BilingualMerger
 from processors.converter import EncodingConverter
 from processors.realigner import SubtitleRealigner
@@ -81,31 +82,32 @@ class InteractiveInterface:
                 elif choice == '8':
                     self._show_help()
                 elif choice == '0' or choice.lower() == 'q':
-                    print("\nGoodbye!")
+                    print(f"\n{t('app.goodbye')}")
                     return 0
                 else:
-                    print("Invalid choice. Please try again.")
-                
-                input("\nPress Enter to continue...")
-                
+                    print(t('app.invalid_choice'))
+
+                input(f"\n{t('app.press_enter')}")
+
             except KeyboardInterrupt:
-                print("\n\nOperation cancelled by user. Goodbye!")
+                print(f"\n\n{t('app.cancelled')}")
                 return 0
             except Exception as e:
-                print(f"\nError: {e}")
-                input("Press Enter to continue...")
+                print(f"\n{t('app.error', error=e)}")
+                input(t('app.press_enter'))
     
     def _print_header(self):
         """Print the application header."""
+        title = t('app.version_info', name=t('app.name'), version=APP_VERSION)
         if self.use_colors:
             print(f"\033[1;36m{'=' * 60}\033[0m")
-            print(f"\033[1;36m{APP_NAME} v{APP_VERSION}\033[0m")
+            print(f"\033[1;36m{title}\033[0m")
             print(f"\033[1;36m{'=' * 60}\033[0m")
         else:
             print("=" * 60)
-            print(f"{APP_NAME} v{APP_VERSION}")
+            print(title)
             print("=" * 60)
-        print("Interactive Subtitle Processing Interface")
+        print(t('app.interactive_header'))
         print()
     
     def _show_main_menu(self) -> str:
@@ -115,22 +117,22 @@ class InteractiveInterface:
         Returns:
             User's menu choice as string
         """
-        print("\nMain Menu:")
-        print("1. Merge Bilingual Subtitles")
-        print("2. Convert Subtitle Encoding")
-        print("3. Realign Subtitle Timing")
-        print("4. Batch Operations")
-        print("5. Video Processing")
+        print(f"\n{t('menu.main')}")
+        print(f"1. {t('menu.merge')}")
+        print(f"2. {t('menu.convert')}")
+        print(f"3. {t('menu.realign')}")
+        print(f"4. {t('menu.batch')}")
+        print(f"5. {t('menu.video')}")
         if self.pgsrip_wrapper:
-            print("6. PGS Subtitle Conversion")
+            print(f"6. {t('menu.pgs')}")
         else:
-            print("6. PGS Subtitle Conversion (Not Available)")
-        print("7. Split Bilingual Subtitles")
-        print("8. Help & Information")
-        print("0. Exit")
+            print(f"6. {t('menu.pgs_unavailable')}")
+        print(f"7. {t('menu.split')}")
+        print(f"8. {t('menu.help')}")
+        print(f"0. {t('menu.exit')}")
         print()
-        
-        return input("Enter your choice (0-7): ").strip()
+
+        return input(t('menu.enter_choice')).strip()
 
     def _get_enhanced_alignment_options(self) -> dict:
         """Get enhanced alignment options from user."""
