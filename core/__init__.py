@@ -13,6 +13,7 @@ from .video_containers import VideoContainerHandler
 from .encoding_detection import EncodingDetector
 from .language_detection import LanguageDetector
 from .timing_utils import TimeConverter
+from .similarity_alignment import MultiAnchorAligner, ProperNounExtractor, AnchorPair
 
 __all__ = [
     'SubtitleFormat',
@@ -23,5 +24,8 @@ __all__ = [
     'VideoContainerHandler',
     'EncodingDetector',
     'LanguageDetector',
-    'TimeConverter'
+    'TimeConverter',
+    'MultiAnchorAligner',
+    'ProperNounExtractor',
+    'AnchorPair',
 ]

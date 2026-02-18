@@ -95,7 +95,7 @@ QUICK START - Common Use Cases:
 
 ADVANCED OPTIONS:
 =================
---auto-align          Smart alignment for mismatched timing
+--auto-align          Smart multi-anchor alignment (proper nouns, numbers, similarity)
 --use-translation     Use Google Translate for cross-language matching
 --debug               Show detailed processing information
 
@@ -204,7 +204,7 @@ The tool auto-detects subtitle languages from:
 
         # Enhanced alignment options
         merge_parser.add_argument('--auto-align', action='store_true',
-                                help='Enable automatic alignment using advanced methods')
+                                help='Smart alignment using proper noun matching, numbers, and text similarity')
         merge_parser.add_argument('--use-translation', action='store_true',
                                 help='Enable translation-assisted alignment for cross-language matching')
         merge_parser.add_argument('--alignment-threshold', type=float, default=0.8,
@@ -267,7 +267,7 @@ The tool auto-detects subtitle languages from:
         realign_parser.add_argument('--no-backup', action='store_true',
                                   help='Do not create backup before overwriting')
         realign_parser.add_argument('--auto-align', action='store_true',
-                                  help='Enable automatic alignment using similarity analysis')
+                                  help='Smart alignment using proper noun matching, numbers, and text similarity')
         realign_parser.add_argument('--use-translation', action='store_true',
                                   help='Enable Google Cloud Translation for cross-language alignment')
         realign_parser.add_argument('--translation-api-key', type=str,
@@ -351,7 +351,7 @@ The tool auto-detects subtitle languages from:
 
         # Enhanced alignment options for batch processing
         batch_merge_parser.add_argument('--auto-align', action='store_true',
-                                      help='Enable automatic alignment using advanced methods')
+                                      help='Smart alignment using proper noun matching, numbers, and text similarity')
         batch_merge_parser.add_argument('--use-translation', action='store_true',
                                       help='Enable translation-assisted alignment for cross-language matching')
         batch_merge_parser.add_argument('--alignment-threshold', type=float, default=0.8,
@@ -387,7 +387,7 @@ The tool auto-detects subtitle languages from:
 
         # Enhanced alignment options for batch-align
         batch_align_parser.add_argument('--auto-align', action='store_true',
-                                       help='Enable automatic alignment using advanced methods')
+                                       help='Smart alignment using proper noun matching, numbers, and text similarity')
         batch_align_parser.add_argument('--use-translation', action='store_true',
                                        help='Enable translation-assisted alignment')
         batch_align_parser.add_argument('--alignment-threshold', type=float, default=0.8,

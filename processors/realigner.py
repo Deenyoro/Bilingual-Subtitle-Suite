@@ -11,7 +11,8 @@ from typing import List, Tuple, Optional
 from core.subtitle_formats import SubtitleEvent, SubtitleFile, SubtitleFormatFactory
 from core.timing_utils import TimeConverter
 from core.translation_service import get_translation_service, TranslationResult
-from core.similarity_alignment import SimilarityAligner, AlignmentMatch
+from core.similarity_alignment import SimilarityAligner, AlignmentMatch, MultiAnchorAligner
+from core.language_detection import LanguageDetector
 from utils.logging_config import get_logger
 from utils.file_operations import FileHandler
 
@@ -366,6 +367,39 @@ class SubtitleRealigner:
                 logger.error("One or both files have no events")
                 return []
 
+            # --- Try multi-anchor alignment first (much faster than N*M) ---
+            try:
+                # Detect if same language
+                src_sample = ' '.join(e.text for e in source.events[:10])
+                ref_sample = ' '.join(e.text for e in reference.events[:10])
+                src_lang = LanguageDetector.detect_language(src_sample)
+                ref_lang = LanguageDetector.detect_language(ref_sample)
+                same_language = (src_lang == ref_lang and src_lang != 'unknown')
+
+                ma_aligner = MultiAnchorAligner(min_anchors=3)
+                anchors = ma_aligner.find_anchors(
+                    source.events, reference.events, same_language=same_language)
+
+                if anchors:
+                    # Convert AnchorPair results to AlignmentMatch format
+                    ma_matches = []
+                    for anchor in anchors:
+                        ma_matches.append(AlignmentMatch(
+                            source_index=anchor.source_index,
+                            reference_index=anchor.reference_index,
+                            confidence=anchor.confidence,
+                            similarity_score=anchor.confidence,
+                            method=f"multi_anchor_{anchor.match_method}",
+                            source_text=source.events[anchor.source_index].text,
+                            reference_text=reference.events[anchor.reference_index].text,
+                        ))
+                    logger.info(f"Multi-anchor alignment found {len(ma_matches)} matches")
+                    if ma_matches:
+                        return ma_matches
+            except Exception as e:
+                logger.warning(f"Multi-anchor alignment failed in realigner: {e}")
+
+            # --- Fall through to existing N*M similarity analysis ---
             # Extract text content
             source_texts = [event.text for event in source.events]
             reference_texts = [event.text for event in reference.events]
