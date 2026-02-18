@@ -38,7 +38,7 @@ class PGSRipNotInstalledError(Exception):
 
 @dataclass
 class PGSTrack:
-    """Represents a PGS subtitle track."""
+    """Represents a PGS/image-based subtitle track."""
     track_id: str
     language: str = ""
     title: str = ""
@@ -46,6 +46,7 @@ class PGSTrack:
     is_forced: bool = False
     ffmpeg_index: str = ""
     estimated_language: str = ""  # OCR language estimation
+    track_type: str = "pgs"  # 'pgs', 'dvdsub', or 'dvbsub'
 
 
 class PGSRipWrapper:
@@ -84,7 +85,7 @@ class PGSRipWrapper:
                 has_pgsrip = True
             except ImportError:
                 pass
-        if not has_pgsrip and not self.config:
+        if not has_pgsrip:
             return False
 
         # Check for tessdata (bundled or in install_dir)
@@ -261,10 +262,18 @@ class PGSRipWrapper:
         # Get all subtitle tracks
         all_tracks = VideoContainerHandler.list_subtitle_tracks(video_path)
         
-        # Filter for PGS tracks
+        # Codec-to-track-type mapping for image-based subtitle formats
+        codec_type_map = {
+            'hdmv_pgs_subtitle': 'pgs', 'pgs': 'pgs', 'sup': 'pgs',
+            'dvd_subtitle': 'dvdsub', 'dvb_subtitle': 'dvbsub',
+        }
+
+        # Filter for PGS and other image-based subtitle tracks
         pgs_tracks = []
         for track in all_tracks:
-            if track.codec.lower() in ['hdmv_pgs_subtitle', 'pgs', 'sup']:
+            codec_lower = track.codec.lower()
+            track_type = codec_type_map.get(codec_lower)
+            if track_type:
                 pgs_track = PGSTrack(
                     track_id=track.track_id,
                     language=track.language,
@@ -272,7 +281,8 @@ class PGSRipWrapper:
                     is_default=track.is_default,
                     is_forced=track.is_forced,
                     ffmpeg_index=track.ffmpeg_index,
-                    estimated_language=self._estimate_language(track)
+                    estimated_language=self._estimate_language(track),
+                    track_type=track_type,
                 )
                 pgs_tracks.append(pgs_track)
         
@@ -301,7 +311,13 @@ class PGSRipWrapper:
             'zh-hk': 'chi_tra',
             'en': 'eng',
             'eng': 'eng',
-            'english': 'eng'
+            'english': 'eng',
+            'ja': 'jpn',
+            'jpn': 'jpn',
+            'japanese': 'jpn',
+            'ko': 'kor',
+            'kor': 'kor',
+            'korean': 'kor',
         }
         
         # Check track language
@@ -365,9 +381,93 @@ class PGSRipWrapper:
             logger.error(f"Failed to convert PGS track: {e}")
             return False
     
-    def _extract_pgs_to_sup(self, video_path: Path, track: PGSTrack, 
+    def convert_subtitle_file(self, input_path: Path, output_path: Path,
+                              language: Optional[str] = None) -> bool:
+        """
+        Convert a standalone subtitle file (.sup, .idx+.sub) to SRT via OCR.
+
+        Args:
+            input_path: Path to .sup, .idx, or .sub file
+            output_path: Output SRT file path
+            language: OCR language (default: eng)
+
+        Returns:
+            True if conversion successful
+        """
+        if not self.is_installed:
+            raise PGSRipNotInstalledError("PGSRip is not installed")
+
+        ocr_language = language or 'eng'
+        ext = input_path.suffix.lower()
+
+        if ext == '.sup':
+            # Direct OCR on SUP file
+            return self._convert_sup_to_srt(input_path, output_path, ocr_language)
+        elif ext in ('.idx', '.sub'):
+            # VobSub .idx+.sub pair: convert to .sup via ffmpeg, then OCR
+            idx_file = input_path.with_suffix('.idx')
+            sub_file = input_path.with_suffix('.sub')
+            if not idx_file.exists() or not sub_file.exists():
+                logger.error(f"VobSub requires both .idx and .sub files: {input_path}")
+                return False
+
+            import tempfile
+            with tempfile.TemporaryDirectory() as temp_dir:
+                sup_file = Path(temp_dir) / f"{input_path.stem}.sup"
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', str(idx_file),
+                    '-c:s', 'copy',
+                    str(sup_file)
+                ]
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    if result.returncode != 0 or not sup_file.exists():
+                        logger.error(f"Failed to convert VobSub to SUP: {result.stderr}")
+                        return False
+                except FileNotFoundError:
+                    logger.error("ffmpeg not found for VobSub conversion")
+                    return False
+
+                return self._convert_sup_to_srt(sup_file, output_path, ocr_language)
+        else:
+            logger.error(f"Unsupported subtitle file format: {ext}")
+            return False
+
+    def _extract_pgs_to_sup(self, video_path: Path, track: PGSTrack,
                            output_path: Path) -> bool:
-        """Extract PGS track to SUP file using mkvextract."""
+        """Extract PGS track to SUP file, trying ffmpeg first then mkvextract.
+
+        ffmpeg is often faster for large files. No hard timeout is imposed
+        since UHD remux files (28GB+) can take a very long time to demux.
+        """
+        # Determine ffmpeg stream index: subtitle streams are indexed relative
+        # to other subtitle streams, so we need the position among subtitle tracks.
+        ffmpeg_sub_index = self._get_ffmpeg_subtitle_index(video_path, track.track_id)
+
+        # Try ffmpeg first (often faster for large containers)
+        if ffmpeg_sub_index is not None:
+            try:
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', str(video_path),
+                    '-map', f'0:s:{ffmpeg_sub_index}',
+                    '-c', 'copy',
+                    str(output_path)
+                ]
+                logger.info(f"Extracting PGS track {track.track_id} via ffmpeg (stream s:{ffmpeg_sub_index})...")
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
+                    logger.info(f"Extracted PGS track via ffmpeg: {output_path} ({output_path.stat().st_size} bytes)")
+                    return True
+                else:
+                    logger.debug(f"ffmpeg extraction failed, falling back to mkvextract: {result.stderr[:200] if result.stderr else 'no output'}")
+            except FileNotFoundError:
+                logger.debug("ffmpeg not found, falling back to mkvextract")
+            except Exception as e:
+                logger.debug(f"ffmpeg extraction error: {e}, falling back to mkvextract")
+
+        # Fallback to mkvextract (no timeout - large files need time)
         try:
             cmd = [
                 'mkvextract',
@@ -375,23 +475,34 @@ class PGSRipWrapper:
                 'tracks',
                 f"{track.track_id}:{output_path}"
             ]
-            
-            # Use generous timeout for large UHD remux files (up to 30 min)
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+            logger.info(f"Extracting PGS track {track.track_id} via mkvextract...")
+            result = subprocess.run(cmd, capture_output=True, text=True)
 
             if result.returncode == 0 and output_path.exists():
-                logger.debug(f"Extracted PGS track to: {output_path}")
+                logger.info(f"Extracted PGS track via mkvextract: {output_path}")
                 return True
             else:
                 logger.error(f"Failed to extract PGS track: {result.stderr}")
                 return False
 
-        except subprocess.TimeoutExpired:
-            logger.error("PGS extraction timed out (exceeded 30 min)")
-            return False
         except Exception as e:
             logger.error(f"PGS extraction failed: {e}")
             return False
+
+    def _get_ffmpeg_subtitle_index(self, video_path: Path, mkvextract_track_id: str) -> Optional[int]:
+        """Get the ffmpeg subtitle stream index for a given MKV track ID.
+
+        ffmpeg uses relative indices per stream type (s:0, s:1, etc.),
+        while MKV uses absolute track IDs. This maps between them.
+        """
+        try:
+            all_tracks = VideoContainerHandler.list_subtitle_tracks(video_path)
+            for idx, t in enumerate(all_tracks):
+                if t.track_id == str(mkvextract_track_id):
+                    return idx
+            return None
+        except Exception:
+            return None
     
     def _convert_sup_to_srt(self, sup_file: Path, srt_file: Path,
                            ocr_language: str) -> bool:
@@ -429,11 +540,16 @@ class PGSRipWrapper:
             # Run PGSRip conversion
             result = api.rip(sup_media, options)
 
-            if result and srt_file.exists():
+            # PGSRip API names its output after the input SUP stem
+            expected_srt = srt_file.parent / f"{sup_file.stem}.srt"
+            if expected_srt.exists() and expected_srt != srt_file:
+                expected_srt.rename(srt_file)
+
+            if srt_file.exists():
                 logger.debug(f"Converted SUP to SRT: {srt_file}")
                 return True
             else:
-                logger.error("PGSRip conversion failed")
+                logger.error("PGSRip conversion failed - no output file")
                 return False
 
         except Exception as e:
@@ -465,7 +581,7 @@ class PGSRipWrapper:
             logger.debug(f"TESSDATA_PREFIX: {env['TESSDATA_PREFIX']}")
 
             result = subprocess.run(cmd, capture_output=True, text=True,
-                                  timeout=600, env=env, cwd=str(srt_file.parent))
+                                  env=env, cwd=str(srt_file.parent))
 
             logger.debug(f"PGSRip CLI stdout: {result.stdout}")
             if result.stderr:
@@ -486,9 +602,6 @@ class PGSRipWrapper:
                 logger.error(f"CLI PGSRip conversion failed (code {result.returncode}): {result.stderr}")
                 return False
 
-        except subprocess.TimeoutExpired:
-            logger.error("PGSRip conversion timed out")
-            return False
         except Exception as e:
             logger.error(f"CLI PGSRip conversion failed: {e}")
             return False

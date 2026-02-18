@@ -551,10 +551,10 @@ OUTPUT:
             description='Convert PGS (Presentation Graphic Stream) subtitles to SRT using OCR'
         )
 
-        convert_pgs_parser.add_argument('input', type=Path, help='Video file with PGS subtitles')
+        convert_pgs_parser.add_argument('input', type=Path, help='Video file with PGS subtitles, or standalone .sup/.idx/.sub file')
         convert_pgs_parser.add_argument('-o', '--output', type=Path, help='Output SRT file path')
         convert_pgs_parser.add_argument('-l', '--language',
-                                      choices=['eng', 'chi_sim', 'chi_tra'],
+                                      choices=['eng', 'chi_sim', 'chi_tra', 'jpn', 'kor'],
                                       help='OCR language (auto-detect if not specified)')
         convert_pgs_parser.add_argument('-t', '--track', help='Specific PGS track ID to convert')
         convert_pgs_parser.add_argument('--list-tracks', action='store_true',
@@ -574,7 +574,7 @@ OUTPUT:
         batch_convert_pgs_parser.add_argument('-o', '--output-dir', type=Path,
                                             help='Output directory for SRT files')
         batch_convert_pgs_parser.add_argument('-l', '--language',
-                                            choices=['eng', 'chi_sim', 'chi_tra'],
+                                            choices=['eng', 'chi_sim', 'chi_tra', 'jpn', 'kor'],
                                             help='OCR language for all conversions')
 
         # Setup PGSRip
@@ -1410,6 +1410,15 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
             return 1
 
         try:
+            # Standalone subtitle files (.sup, .idx, .sub) — skip track detection
+            if args.input.suffix.lower() in ('.sup', '.idx', '.sub'):
+                output_path = args.output or args.input.with_suffix('.srt')
+                ocr_lang = args.language or 'eng'
+                success = self.pgsrip_wrapper.convert_subtitle_file(
+                    args.input, output_path, ocr_lang
+                )
+                return 0 if success else 1
+
             # List tracks if requested
             if args.list_tracks:
                 pgs_info = self.pgsrip_wrapper.get_pgs_info(args.input)
@@ -1762,7 +1771,7 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
             logger.debug(f"Command: {' '.join(cmd)}")
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(cmd, capture_output=True, text=True)
 
             if result.returncode == 0:
                 logger.info("Extraction completed successfully!")
@@ -1774,9 +1783,6 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
                 logger.error(f"Extraction failed: {result.stderr}")
                 return 1
 
-        except subprocess.TimeoutExpired:
-            logger.error("Extraction timed out")
-            return 1
         except Exception as e:
             logger.error(f"Extraction failed: {e}")
             return 1

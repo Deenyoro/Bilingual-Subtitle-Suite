@@ -16,7 +16,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
-from utils.constants import VIDEO_EXTENSIONS, FFMPEG_CODEC_MAP, DEFAULT_FFMPEG_TIMEOUT
+from utils.constants import VIDEO_EXTENSIONS, FFMPEG_CODEC_MAP
 from utils.logging_config import get_logger
 from core.subtitle_formats import SubtitleTrack
 from core.track_analyzer import SubtitleTrackAnalyzer
@@ -45,19 +45,19 @@ class VideoContainerHandler:
         return file_path.suffix.lower() in VIDEO_EXTENSIONS
     
     @staticmethod
-    def run_command(cmd: List[str], capture_output: bool = True, 
-                   timeout: int = DEFAULT_FFMPEG_TIMEOUT) -> subprocess.CompletedProcess:
+    def run_command(cmd: List[str], capture_output: bool = True,
+                   timeout: int = None) -> subprocess.CompletedProcess:
         """
-        Run a command with proper error handling and timeout.
+        Run a command with proper error handling and optional timeout.
 
         Args:
             cmd: Command and arguments as list
             capture_output: Whether to capture stdout/stderr
-            timeout: Command timeout in seconds
+            timeout: Command timeout in seconds (None = no timeout)
 
         Returns:
             CompletedProcess instance
-            
+
         Example:
             >>> result = VideoContainerHandler.run_command(["ffprobe", "-version"])
             >>> print(f"Return code: {result.returncode}")
@@ -331,7 +331,6 @@ class VideoContainerHandler:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=900  # 15 minutes for large remux files
             )
 
             if result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
@@ -342,9 +341,6 @@ class VideoContainerHandler:
                     logger.debug(f"mkvextract stderr: {result.stderr}")
                 return None
 
-        except subprocess.TimeoutExpired:
-            logger.warning("mkvextract timed out")
-            return None
         except Exception as e:
             logger.debug(f"mkvextract failed: {e}")
             return None
@@ -415,7 +411,7 @@ class VideoContainerHandler:
                 str(tmp_path)
             ]
 
-            result = VideoContainerHandler.run_command(cmd, timeout=900)
+            result = VideoContainerHandler.run_command(cmd)
 
             if result.returncode == 0 and tmp_path.exists() and tmp_path.stat().st_size > 0:
                 try:
@@ -441,7 +437,7 @@ class VideoContainerHandler:
                     str(tmp_path_converted)
                 ]
 
-                result = VideoContainerHandler.run_command(cmd, timeout=900)
+                result = VideoContainerHandler.run_command(cmd)
 
                 if (result.returncode == 0 and tmp_path_converted.exists() and
                     tmp_path_converted.stat().st_size > 0):

@@ -25,7 +25,7 @@ import logging
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.constants import APP_NAME, APP_VERSION, VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS
+from utils.constants import APP_NAME, APP_VERSION, VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS, is_lite_build
 from utils.logging_config import get_logger
 from utils.i18n import t
 
@@ -149,6 +149,18 @@ class BISSGui:
         self.root.title(f"{APP_NAME} v{APP_VERSION}")
         self.root.geometry("950x750")
         self.root.minsize(850, 650)
+
+        # Initialize PGSRip wrapper
+        self._pgsrip_wrapper = None
+        self._pgs_available = False
+        self._is_lite = is_lite_build()
+        try:
+            from third_party import PGSRipWrapper, is_pgsrip_available
+            if is_pgsrip_available():
+                self._pgsrip_wrapper = PGSRipWrapper()
+                self._pgs_available = True
+        except Exception:
+            pass
 
         # Configure style
         self.style = ttk.Style()
@@ -525,11 +537,11 @@ class BISSGui:
         self.notebook.add(tab, text="  Extract Tracks  ")
 
         # Intro
-        ttk.Label(tab, text="Extract subtitle tracks from MKV files using mkvextract (fast)",
+        ttk.Label(tab, text="Extract subtitle tracks from video files (MKV preferred, fast with mkvextract)",
                  style='Subtitle.TLabel').pack(anchor='w', pady=(0, 10))
 
         # File selection
-        file_frame = ttk.LabelFrame(tab, text="MKV Video File", padding="10")
+        file_frame = ttk.LabelFrame(tab, text="Video File", padding="10")
         file_frame.pack(fill=tk.X, pady=(0, 10))
 
         file_row = ttk.Frame(file_frame)
@@ -576,6 +588,19 @@ class BISSGui:
         ttk.Button(out_row, text="Browse...", command=self._browse_extract_output).pack(side=tk.LEFT, padx=(5, 0))
         ttk.Label(out_row, text="(empty = same as video)", style='Subtitle.TLabel').pack(side=tk.LEFT, padx=(5, 0))
 
+        # Auto-OCR checkbox for PGS tracks
+        self.extract_ocr_var = tk.BooleanVar(value=self._pgs_available)
+        ocr_state = 'normal' if self._pgs_available else 'disabled'
+        if self._is_lite:
+            ocr_text = "Convert PGS/image tracks to SRT after extraction (requires biss-full.exe)"
+        elif not self._pgs_available:
+            ocr_text = "Convert PGS/image tracks to SRT after extraction (install PGSRip first)"
+        else:
+            ocr_text = "Convert PGS/image tracks to SRT after extraction"
+        self._extract_ocr_check = ttk.Checkbutton(output_frame, text=ocr_text,
+                       variable=self.extract_ocr_var, state=ocr_state)
+        self._extract_ocr_check.pack(anchor='w', pady=(5, 0))
+
         # Action buttons
         btn_frame = ttk.Frame(tab)
         btn_frame.pack(fill=tk.X, pady=(5, 0))
@@ -595,10 +620,10 @@ class BISSGui:
         self._extract_tracks = []
 
     def _browse_extract_file(self):
-        """Browse for MKV file to extract from."""
+        """Browse for video file to extract from."""
         filename = filedialog.askopenfilename(
-            title="Select MKV Video",
-            filetypes=[("MKV files", "*.mkv"), ("All files", "*.*")]
+            title="Select Video File",
+            filetypes=[("Video files", "*.mkv *.mp4 *.m4v *.mov *.avi *.ts *.webm"), ("MKV files", "*.mkv"), ("All files", "*.*")]
         )
         if filename:
             self.extract_file_var.set(filename)
@@ -663,11 +688,7 @@ After installation, restart this application."""
 
         video_path = self.extract_file_var.get().strip()
         if not video_path:
-            messagebox.showerror("Error", "Please select an MKV file")
-            return
-
-        if not video_path.lower().endswith('.mkv'):
-            messagebox.showerror("Error", "Only MKV files are supported for extraction")
+            messagebox.showerror("Error", "Please select a video file")
             return
 
         # Clear existing tracks
@@ -791,7 +812,7 @@ After installation, restart this application."""
 
         video_path = self.extract_file_var.get().strip()
         if not video_path:
-            messagebox.showerror("Error", "Please select an MKV file")
+            messagebox.showerror("Error", "Please select a video file")
             return
 
         selected = self.extract_tree.selection()
@@ -806,6 +827,7 @@ After installation, restart this application."""
         # Build extraction args
         video_stem = Path(video_path).stem
         extract_args = []
+        pgs_codecs = {'s_hdmv/pgs', 's_vobsub'}
 
         for item in selected:
             values = self.extract_tree.item(item, 'values')
@@ -813,8 +835,13 @@ After installation, restart this application."""
             lang = values[1] if values[1] else f"track{track_id}"
             codec = values[2].lower()
 
-            # Determine extension
-            ext = '.srt' if 's_text' in codec or 'subrip' in codec else '.ass'
+            # Determine extension based on codec
+            if any(pgs in codec for pgs in pgs_codecs) or 'pgs' in codec:
+                ext = '.sup'
+            elif 's_text' in codec or 'subrip' in codec:
+                ext = '.srt'
+            else:
+                ext = '.ass'
             output_file = Path(output_dir) / f"{video_stem}.{lang}.{track_id}{ext}"
 
             extract_args.append(f"{track_id}:{output_file}")
@@ -826,25 +853,46 @@ After installation, restart this application."""
         self.extract_progress.pack(side=tk.LEFT, padx=(0, 10))
         self.extract_progress.start(10)
 
+        do_ocr = self.extract_ocr_var.get() and self._pgsrip_wrapper
+
         def run_extract():
             try:
                 cmd = ['mkvextract', video_path, 'tracks'] + extract_args
                 logger.info(f"Running: mkvextract with {len(extract_args)} tracks")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                result = subprocess.run(cmd, capture_output=True, text=True)
 
                 if result.returncode == 0:
-                    self.root.after(0, lambda: messagebox.showinfo("Success",
-                        f"Extracted {len(extract_args)} track(s) successfully!"))
+                    ocr_results = []
                     for arg in extract_args:
                         track_id, output = arg.split(':', 1)
                         logger.info(f"  Track {track_id} -> {output}")
+
+                        # Auto-OCR for PGS/VobSub tracks
+                        out_path = Path(output)
+                        if do_ocr and out_path.suffix.lower() == '.sup' and out_path.exists():
+                            srt_path = out_path.with_suffix('.srt')
+                            logger.info(f"  OCR converting {out_path.name} -> {srt_path.name}...")
+                            try:
+                                success = self._pgsrip_wrapper.convert_subtitle_file(
+                                    out_path, srt_path, 'eng'
+                                )
+                                if success:
+                                    out_path.unlink()  # Remove raw .sup
+                                    ocr_results.append(f"Track {track_id}: OCR -> {srt_path.name}")
+                                else:
+                                    ocr_results.append(f"Track {track_id}: OCR failed, kept {out_path.name}")
+                            except Exception as ocr_err:
+                                ocr_results.append(f"Track {track_id}: OCR error: {ocr_err}")
+
+                    msg = f"Extracted {len(extract_args)} track(s) successfully!"
+                    if ocr_results:
+                        msg += "\n\nOCR results:\n" + "\n".join(ocr_results)
+                    self.root.after(0, lambda m=msg: messagebox.showinfo("Success", m))
                 else:
                     self.root.after(0, lambda: messagebox.showerror("Error",
                         f"Extraction failed: {result.stderr}"))
 
-            except subprocess.TimeoutExpired:
-                self.root.after(0, lambda: messagebox.showerror("Error", "Extraction timed out"))
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror("Error", f"Extraction failed: {e}"))
             finally:
@@ -1152,6 +1200,21 @@ After installation, restart this application."""
                        variable=self.convert_type_var, value="ass_to_srt",
                        command=self._update_convert_type).pack(anchor='w')
 
+        # PGS OCR radio button — disabled in lite build or when PGSRip unavailable
+        if self._is_lite:
+            pgs_label = "PGS/Image Subtitle to SRT (OCR) — requires biss-full.exe"
+            pgs_state = 'disabled'
+        elif not self._pgs_available:
+            pgs_label = "PGS/Image Subtitle to SRT (OCR) — install PGSRip: biss setup-pgsrip install"
+            pgs_state = 'disabled'
+        else:
+            pgs_label = "PGS/Image Subtitle to SRT (OCR)"
+            pgs_state = 'normal'
+        self._pgs_radio = ttk.Radiobutton(type_frame, text=pgs_label,
+                       variable=self.convert_type_var, value="pgs_ocr",
+                       command=self._update_convert_type, state=pgs_state)
+        self._pgs_radio.pack(anchor='w')
+
         # File selection
         file_frame = ttk.LabelFrame(tab, text="Subtitle File", padding="10")
         file_frame.pack(fill=tk.X, pady=(0, 10))
@@ -1216,6 +1279,43 @@ After installation, restart this application."""
         self.ass_output_var = tk.StringVar()
         ttk.Entry(out_row, textvariable=self.ass_output_var, width=45).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
         ttk.Button(out_row, text="Browse...", command=self._browse_ass_output).pack(side=tk.LEFT, padx=(5, 0))
+
+        # === PGS OCR options (hidden by default) ===
+        self.pgs_options_frame = ttk.LabelFrame(tab, text="PGS OCR Options", padding="10")
+
+        # PGS track dropdown
+        pgs_track_row = ttk.Frame(self.pgs_options_frame)
+        pgs_track_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(pgs_track_row, text="PGS Track:").pack(side=tk.LEFT)
+        self.pgs_track_var = tk.StringVar()
+        self.pgs_track_combo = ttk.Combobox(pgs_track_row, textvariable=self.pgs_track_var,
+                                             width=50, state='readonly')
+        self.pgs_track_combo.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(pgs_track_row, text="Detect Tracks",
+                  command=self._detect_pgs_tracks).pack(side=tk.LEFT, padx=(5, 0))
+
+        # OCR language dropdown
+        pgs_lang_row = ttk.Frame(self.pgs_options_frame)
+        pgs_lang_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(pgs_lang_row, text="OCR Language:").pack(side=tk.LEFT)
+        self.pgs_lang_var = tk.StringVar(value="auto")
+        self.pgs_lang_combo = ttk.Combobox(pgs_lang_row, textvariable=self.pgs_lang_var,
+                                            width=15, state='readonly',
+                                            values=['auto', 'eng', 'chi_sim', 'chi_tra', 'jpn', 'kor'])
+        self.pgs_lang_combo.pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(pgs_lang_row, text="(auto = detect from track metadata)",
+                 style='Subtitle.TLabel').pack(side=tk.LEFT, padx=(10, 0))
+
+        # PGS output path
+        pgs_out_row = ttk.Frame(self.pgs_options_frame)
+        pgs_out_row.pack(fill=tk.X, pady=(5, 0))
+        ttk.Label(pgs_out_row, text="Output file:").pack(side=tk.LEFT)
+        self.pgs_output_var = tk.StringVar()
+        ttk.Entry(pgs_out_row, textvariable=self.pgs_output_var, width=45).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(pgs_out_row, text="Browse...", command=self._browse_pgs_output).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Store detected PGS tracks
+        self._pgs_detected_tracks = []
 
         # Execute button
         btn_frame = ttk.Frame(tab)
@@ -1309,12 +1409,21 @@ After installation, restart this application."""
         """Handle convert file path change."""
         path = self.convert_file_var.get().strip()
         if path and Path(path).exists():
-            self.convert_info_panel.update_info(Path(path))
-            self._detect_encoding()
+            p = Path(path)
+            ext = p.suffix.lower()
+
+            # Only show info panel for subtitle files (not videos/SUP)
+            if ext not in ('.sup', '.idx', '.sub') and ext not in {e for e in VIDEO_EXTENSIONS}:
+                self.convert_info_panel.update_info(p)
+                self._detect_encoding()
 
             # Auto-set output path for ASS conversion
-            if path.lower().endswith(('.ass', '.ssa')):
-                self.ass_output_var.set(str(Path(path).with_suffix('.srt')))
+            if ext in ('.ass', '.ssa'):
+                self.ass_output_var.set(str(p.with_suffix('.srt')))
+
+            # Auto-detect PGS tracks when in PGS mode
+            if self.convert_type_var.get() == 'pgs_ocr':
+                self._detect_pgs_tracks()
         else:
             self.convert_info_panel.update_info(None)
             self.detected_encoding_var.set("Select a file")
@@ -1323,14 +1432,20 @@ After installation, restart this application."""
         """Update UI based on conversion type selection."""
         conv_type = self.convert_type_var.get()
 
+        # Hide all option frames first
+        self.encoding_options_frame.pack_forget()
+        self.ass_options_frame.pack_forget()
+        self.pgs_options_frame.pack_forget()
+
         if conv_type == "encoding":
-            self.ass_options_frame.pack_forget()
             self.encoding_options_frame.pack(fill=tk.X, pady=(0, 10))
             self.convert_btn.config(text="Convert Encoding", command=self._execute_convert)
-        else:  # ass_to_srt
-            self.encoding_options_frame.pack_forget()
+        elif conv_type == "ass_to_srt":
             self.ass_options_frame.pack(fill=tk.X, pady=(0, 10))
             self.convert_btn.config(text="Convert ASS to SRT", command=self._execute_ass_convert)
+        elif conv_type == "pgs_ocr":
+            self.pgs_options_frame.pack(fill=tk.X, pady=(0, 10))
+            self.convert_btn.config(text="Convert PGS to SRT", command=self._execute_pgs_convert)
 
     def _browse_ass_output(self):
         """Browse for ASS conversion output file."""
@@ -1398,6 +1513,149 @@ After installation, restart this application."""
                 self.root.after(0, lambda: self._set_status("Ready"))
 
         threading.Thread(target=do_convert, daemon=True).start()
+
+    def _browse_pgs_output(self):
+        """Browse for PGS conversion output file."""
+        file_path = filedialog.asksaveasfilename(
+            title="Save SRT file as",
+            defaultextension=".srt",
+            filetypes=[("SRT files", "*.srt"), ("All files", "*.*")]
+        )
+        if file_path:
+            self.pgs_output_var.set(file_path)
+
+    def _detect_pgs_tracks(self):
+        """Detect PGS tracks in the selected file."""
+        if not self._pgsrip_wrapper:
+            messagebox.showerror("Error", "PGSRip is not available")
+            return
+
+        input_path = self.convert_file_var.get().strip()
+        if not input_path:
+            messagebox.showerror("Error", "Please select a video or SUP file first")
+            return
+
+        input_file = Path(input_path)
+        if not input_file.exists():
+            messagebox.showerror("Error", f"File not found: {input_path}")
+            return
+
+        # For standalone subtitle files, no track detection needed
+        if input_file.suffix.lower() in ('.sup', '.idx', '.sub'):
+            self.pgs_track_combo['values'] = [f"Standalone file: {input_file.name}"]
+            self.pgs_track_var.set(f"Standalone file: {input_file.name}")
+            self._pgs_detected_tracks = []
+            if not self.pgs_output_var.get():
+                self.pgs_output_var.set(str(input_file.with_suffix('.srt')))
+            return
+
+        self._set_status("Detecting PGS tracks...")
+
+        def do_detect():
+            try:
+                tracks = self._pgsrip_wrapper.detect_pgs_tracks(input_file)
+                self._pgs_detected_tracks = tracks
+
+                def update_ui():
+                    if tracks:
+                        labels = []
+                        for t in tracks:
+                            lang = t.language or 'unknown'
+                            title = f" - {t.title}" if t.title else ""
+                            labels.append(f"Track {t.track_id}: {lang}{title} (OCR: {t.estimated_language})")
+                        self.pgs_track_combo['values'] = labels
+                        self.pgs_track_var.set(labels[0])
+                        if not self.pgs_output_var.get():
+                            self.pgs_output_var.set(str(input_file.with_suffix('.pgs.srt')))
+                    else:
+                        self.pgs_track_combo['values'] = ['No PGS tracks found']
+                        self.pgs_track_var.set('No PGS tracks found')
+                    self._set_status("Ready")
+
+                self.root.after(0, update_ui)
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Track detection failed: {e}"))
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        threading.Thread(target=do_detect, daemon=True).start()
+
+    def _execute_pgs_convert(self):
+        """Execute PGS to SRT OCR conversion."""
+        if not self._pgsrip_wrapper:
+            messagebox.showerror("Error", "PGSRip is not available")
+            return
+
+        input_path = self.convert_file_var.get().strip()
+        if not input_path:
+            messagebox.showerror("Error", "Please select a video or SUP file")
+            return
+
+        input_file = Path(input_path)
+        if not input_file.exists():
+            messagebox.showerror("Error", f"File not found: {input_path}")
+            return
+
+        output_path = self.pgs_output_var.get().strip()
+        if not output_path:
+            output_path = str(input_file.with_suffix('.pgs.srt'))
+        output_file = Path(output_path)
+
+        # Determine OCR language
+        ocr_lang = self.pgs_lang_var.get()
+        if ocr_lang == 'auto':
+            ocr_lang = None  # Let the wrapper auto-detect
+
+        self._set_status("Converting PGS to SRT (OCR)...")
+        self.convert_btn.config(state='disabled')
+
+        def do_pgs_convert():
+            try:
+                # Standalone subtitle file
+                if input_file.suffix.lower() in ('.sup', '.idx', '.sub'):
+                    success = self._pgsrip_wrapper.convert_subtitle_file(
+                        input_file, output_file, ocr_lang or 'eng'
+                    )
+                else:
+                    # Video file — use selected track
+                    if not self._pgs_detected_tracks:
+                        self.root.after(0, lambda: messagebox.showerror("Error",
+                            "No PGS tracks detected. Click 'Detect Tracks' first."))
+                        return
+
+                    # Find selected track index
+                    selected_label = self.pgs_track_var.get()
+                    track_idx = 0
+                    values = self.pgs_track_combo['values']
+                    if isinstance(values, (list, tuple)):
+                        for i, v in enumerate(values):
+                            if v == selected_label:
+                                track_idx = i
+                                break
+
+                    if track_idx < len(self._pgs_detected_tracks):
+                        track = self._pgs_detected_tracks[track_idx]
+                    else:
+                        track = self._pgs_detected_tracks[0]
+
+                    success = self._pgsrip_wrapper.convert_pgs_track(
+                        input_file, track, output_file, ocr_lang
+                    )
+
+                if success:
+                    self.root.after(0, lambda: messagebox.showinfo("Success",
+                        f"PGS converted successfully!\n\nOutput: {output_file.name}"))
+                else:
+                    self.root.after(0, lambda: messagebox.showerror("Error",
+                        "PGS conversion failed - check log for details"))
+
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error",
+                    f"PGS conversion failed: {e}"))
+            finally:
+                self.root.after(0, lambda: self.convert_btn.config(state='normal'))
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        threading.Thread(target=do_pgs_convert, daemon=True).start()
 
     def _detect_file_language(self, path: Path) -> str:
         """Detect language of a subtitle file."""
@@ -1679,9 +1937,20 @@ After installation, restart this application."""
             self.shift_output_var.set(path)
 
     def _browse_convert_file(self):
-        """Browse for subtitle file to convert."""
-        filetypes = [("Subtitle files", "*.srt *.ass *.ssa *.vtt"), ("All files", "*.*")]
-        path = filedialog.askopenfilename(title="Select Subtitle File", filetypes=filetypes)
+        """Browse for file to convert (subtitle, video, or SUP depending on mode)."""
+        if self.convert_type_var.get() == 'pgs_ocr':
+            filetypes = [
+                ("Video & SUP files", "*.mkv *.mp4 *.m4v *.mov *.avi *.ts *.sup"),
+                ("SUP files", "*.sup"),
+                ("Video files", "*.mkv *.mp4 *.m4v *.mov *.avi *.ts *.webm"),
+                ("VobSub files", "*.idx *.sub"),
+                ("All files", "*.*")
+            ]
+            title = "Select Video or Subtitle File"
+        else:
+            filetypes = [("Subtitle files", "*.srt *.ass *.ssa *.vtt"), ("All files", "*.*")]
+            title = "Select Subtitle File"
+        path = filedialog.askopenfilename(title=title, filetypes=filetypes)
         if path:
             self.convert_file_var.set(path)
 
