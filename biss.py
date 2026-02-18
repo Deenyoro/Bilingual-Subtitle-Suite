@@ -34,7 +34,7 @@ Usage:
     biss <command> --help
 
 Author: Dean Thomas (@Deenyoro)
-Version: 2.1.0
+Version: 2.2.0
 """
 
 import sys

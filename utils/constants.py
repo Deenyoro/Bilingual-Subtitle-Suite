@@ -8,7 +8,9 @@ This module contains all the constants used across different modules including:
 - Default configuration values
 """
 
+import sys
 from enum import Enum
+from pathlib import Path
 from typing import Set, List, Dict
 
 # ============================================================================
@@ -107,9 +109,6 @@ UTF8_BOM: bytes = b"\xef\xbb\xbf"
 # Default gap threshold for subtitle timing optimization (seconds)
 DEFAULT_GAP_THRESHOLD: float = 0.1
 
-# Default timeout for FFmpeg operations (seconds)
-DEFAULT_FFMPEG_TIMEOUT: int = 900  # 15 minutes
-
 # Default forced subtitle detection threshold
 FORCED_SUBTITLE_THRESHOLD: float = 0.1
 
@@ -141,7 +140,7 @@ DEFAULT_LOG_DATE_FORMAT: str = '%Y-%m-%d %H:%M:%S'
 
 # Application metadata
 APP_NAME: str = "Bilingual Subtitle Suite"
-APP_VERSION: str = "2.1.0"
+APP_VERSION: str = "2.2.0"
 APP_DESCRIPTION: str = """
 A comprehensive tool for processing subtitle files with support for:
 - Bilingual subtitle merging (Chinese-English, Japanese-English, Korean-English, etc.)
@@ -150,3 +149,12 @@ A comprehensive tool for processing subtitle files with support for:
 - Video container subtitle extraction
 - Batch processing operations
 """
+
+
+def is_lite_build() -> bool:
+    """Detect if running as the lite PyInstaller build (no bundled tessdata/pgsrip)."""
+    if not getattr(sys, 'frozen', False):
+        return False  # Running from source — not a build at all
+    meipass = Path(sys._MEIPASS)
+    # Full build has tessdata bundled; lite does not
+    return not (meipass / "third_party" / "pgsrip_install" / "tessdata").exists()
