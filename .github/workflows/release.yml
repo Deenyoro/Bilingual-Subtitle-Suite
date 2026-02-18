@@ -1,0 +1,127 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v2.0.0)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install requests pysrt charset-normalizer Pillow python-dotenv
+
+      - name: Download tessdata files
+        shell: bash
+        run: |
+          mkdir -p third_party/pgsrip_install/tessdata
+          cd third_party/pgsrip_install/tessdata
+          for lang in eng chi_sim chi_tra; do
+            echo "Downloading ${lang}.traineddata..."
+            curl -fSL -o "${lang}.traineddata" \
+              "https://github.com/tesseract-ocr/tessdata/raw/main/${lang}.traineddata"
+          done
+          ls -lh *.traineddata
+
+      - name: Install PGSRip Python package
+        run: |
+          pip install pgsrip 2>$null || echo "PGSRip pip install skipped (optional)"
+        shell: pwsh
+        continue-on-error: true
+
+      - name: Set up PGSRip install structure
+        shell: bash
+        run: |
+          mkdir -p third_party/pgsrip_install/pgsrip
+          # Create minimal config so wrapper detects installation
+          cat > third_party/pgsrip_install/pgsrip_config.json << 'CONFIGEOF'
+          {
+            "installation_type": "bundled",
+            "tessdata_path": "tessdata",
+            "version": "ci-build"
+          }
+          CONFIGEOF
+          # Copy pgsrip package if pip installed it
+          PGSRIP_LOC=$(python -c "import pgsrip; print(pgsrip.__path__[0])" 2>/dev/null || echo "")
+          if [ -n "$PGSRIP_LOC" ] && [ -d "$PGSRIP_LOC" ]; then
+            cp -r "$PGSRIP_LOC"/* third_party/pgsrip_install/pgsrip/
+            echo "PGSRip package copied from: $PGSRIP_LOC"
+          else
+            echo "PGSRip package not available - PGS features disabled"
+          fi
+
+      - name: Build executable
+        run: python build.py --clean
+
+      - name: Verify executable
+        run: |
+          dist\biss.exe --version
+          dist\biss.exe --help
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Bilingual Subtitle Suite ${{ steps.version.outputs.tag }}"
+          body: |
+            ## Bilingual Subtitle Suite ${{ steps.version.outputs.tag }}
+
+            ### Download
+            Download `biss.exe` below - a self-contained Windows executable.
+
+            ### Usage
+            - **GUI**: Double-click `biss.exe`
+            - **CLI**: Run from PowerShell/CMD: `biss.exe merge movie.mkv --output subs.srt`
+            - **Help**: `biss.exe --help`
+
+            ### Features
+            - Bilingual subtitle merging (CJK + English)
+            - Smart alignment using proper noun matching, numbers, and text similarity
+            - Subtitle realignment and timing adjustment
+            - Encoding conversion and detection
+            - PGS subtitle OCR conversion
+            - Batch processing
+            - Interactive GUI and CLI modes
+
+            ### Requirements
+            - Windows 10 or later
+            - [FFmpeg](https://ffmpeg.org/download.html) on PATH (for video processing)
+            - [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) on PATH (for PGS subtitle conversion)
+            - [MKVToolNix](https://mkvtoolnix.download/) on PATH (for MKV operations)
+          files: dist/biss.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
