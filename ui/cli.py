@@ -250,6 +250,8 @@ The tool auto-detects subtitle languages from:
                                   help='Create backup of original file')
         convert_parser.add_argument('-f', '--force', action='store_true',
                                   help='Force conversion even if already target encoding')
+        convert_parser.add_argument('--no-fix-fonts', action='store_true',
+                                  help='Skip automatic font replacement for ASS/SSA files')
     
     def _add_realign_parser(self, subparsers):
         """Add realign command parser."""
@@ -926,15 +928,20 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
             logger.error(f"Input file not found: {args.input}")
             return 1
 
-        success = self.converter.convert_file(
+        result = self.converter.convert_file(
             file_path=args.input,
             keep_backup=args.backup,
             force_conversion=args.force,
-            target_encoding=args.encoding
+            target_encoding=args.encoding,
+            fix_fonts=not getattr(args, 'no_fix_fonts', False)
         )
 
-        if success:
+        if result.modified:
             logger.info(f"Successfully converted: {args.input}")
+            if result.fonts_fixed:
+                logger.info(f"Font replacements in {args.input.name}:")
+                for style_name, old_font, new_font in result.fonts_fixed:
+                    logger.info(f"  [{style_name}] '{old_font}' -> '{new_font}'")
         else:
             logger.info(f"No conversion needed: {args.input}")
 

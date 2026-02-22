@@ -1261,6 +1261,11 @@ After installation, restart this application."""
         ttk.Checkbutton(self.encoding_options_frame, text="Force conversion even if already target encoding",
                        variable=self.convert_force_var).pack(anchor='w')
 
+        self.convert_fix_fonts_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.encoding_options_frame,
+                       text="Fix missing fonts in ASS/SSA files (replace with system fonts)",
+                       variable=self.convert_fix_fonts_var).pack(anchor='w')
+
         # === ASS to SRT options (hidden by default) ===
         self.ass_options_frame = ttk.LabelFrame(tab, text="ASS to SRT Options", padding="10")
 
@@ -2061,21 +2066,28 @@ After installation, restart this application."""
         encoding = self.convert_encoding_var.get()
         create_backup = self.convert_backup_var.get()
         force = self.convert_force_var.get()
+        fix_fonts = self.convert_fix_fonts_var.get()
 
         def run_convert():
             try:
                 from processors.converter import EncodingConverter
                 converter = EncodingConverter()
 
-                success = converter.convert_file(
+                result = converter.convert_file(
                     file_path=Path(input_path),
                     keep_backup=create_backup,
                     force_conversion=force,
-                    target_encoding=encoding
+                    target_encoding=encoding,
+                    fix_fonts=fix_fonts
                 )
 
-                if success:
-                    self.root.after(0, lambda: messagebox.showinfo("Success", "Encoding converted successfully!"))
+                if result.modified:
+                    msg = "Encoding converted successfully!"
+                    if result.fonts_fixed:
+                        msg += "\n\nFont replacements:"
+                        for style_name, old_font, new_font in result.fonts_fixed:
+                            msg += f"\n  [{style_name}] '{old_font}' -> '{new_font}'"
+                    self.root.after(0, lambda: messagebox.showinfo("Success", msg))
                 else:
                     self.root.after(0, lambda: messagebox.showinfo("Info", "No conversion needed (already correct encoding)"))
 
