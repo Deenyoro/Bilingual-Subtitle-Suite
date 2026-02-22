@@ -12,7 +12,7 @@ from core.video_containers import VideoContainerHandler
 from core.language_detection import LanguageDetector
 from core.similarity_alignment import SimilarityAligner, AlignmentMatch, MultiAnchorAligner
 from core.translation_service import get_translation_service, GoogleTranslationService
-from utils.constants import DEFAULT_GAP_THRESHOLD, CHINESE_CODES, ENGLISH_CODES
+from utils.constants import DEFAULT_GAP_THRESHOLD, CHINESE_CODES, ENGLISH_CODES, SubtitleFormat
 from utils.logging_config import get_logger
 from utils.file_operations import FileHandler
 from third_party import get_pgsrip_wrapper
@@ -199,6 +199,12 @@ class BilingualMerger:
             if forced_detection:
                 logger.info(f"Detected forced subtitles in {forced_detection} track")
 
+            # ASS+ASS → ASS: use specialized merge that preserves styles
+            if (output_format == 'ass' and
+                chinese_path and chinese_path.suffix.lower() in ('.ass', '.ssa') and
+                english_path and english_path.suffix.lower() in ('.ass', '.ssa')):
+                return self._merge_ass_to_ass(chinese_sub, english_sub, output_path)
+
             # Merge events
             merged_events = self._merge_overlapping_events(chinese_events, english_events)
             logger.info(f"Created {len(merged_events)} merged events")
@@ -219,7 +225,115 @@ class BilingualMerger:
             logger.error(f"Failed to merge subtitle files: {e}")
             return False
     
-    def process_video(self, video_path: Path, 
+    # Style name keywords that indicate non-dialogue content (OP/ED/signs/etc.)
+    _NON_DIALOGUE_KEYWORDS = [
+        'op', 'ed', 'opening', 'ending', 'sign', 'title', 'name',
+        'staff', 'credit', 'note', 'comment', 'insert', 'karaoke',
+        'internet', 'screen', 'jap', 'jpn', 'romaji', 'song', 'ep ',
+    ]
+
+    def _is_dialogue_style(self, style_name: str) -> bool:
+        """Check if an ASS style name represents main dialogue content."""
+        style_lower = style_name.lower().strip()
+        return not any(kw in style_lower for kw in self._NON_DIALOGUE_KEYWORDS)
+
+    def _merge_ass_to_ass(self, chinese_sub: SubtitleFile, english_sub: SubtitleFile,
+                          output_path: Path) -> bool:
+        """
+        Merge two ASS subtitle files preserving ASS styling.
+
+        Strategy:
+        - Use English ASS styles/script_info as base (typically better styled fansubs)
+        - Add a Bilingual style with CJK-compatible font for combined dialogue
+        - Only merge dialogue events (skip OP/ED/signs/staff from Chinese file)
+        - Keep all non-dialogue events from English file unchanged
+        """
+        # Separate dialogue from non-dialogue events
+        zh_dialogue = [e for e in chinese_sub.events
+                       if self._is_dialogue_style(e.style or "Default")]
+        en_dialogue = [e for e in english_sub.events
+                       if self._is_dialogue_style(e.style or "Default")]
+        en_non_dialogue = [e for e in english_sub.events
+                          if not self._is_dialogue_style(e.style or "Default")]
+
+        logger.info(f"ASS merge: {len(zh_dialogue)} zh dialogue, "
+                    f"{len(en_dialogue)} en dialogue, "
+                    f"{len(en_non_dialogue)} en non-dialogue (OP/ED/signs/names)")
+
+        # Merge dialogue events only
+        merged_dialogue = self._merge_overlapping_events(zh_dialogue, en_dialogue)
+
+        # Determine which styles came from Chinese source
+        zh_dialogue_styles = {(e.style or "Default") for e in chinese_sub.events
+                              if self._is_dialogue_style(e.style or "Default")}
+
+        # Post-process merged events: assign Bilingual style to combined/Chinese events
+        for event in merged_dialogue:
+            if event.style is None:
+                # Combined bilingual event from Phase 1
+                event.style = 'Bilingual'
+                # Clear raw so the writer uses combined text
+                event.raw = None
+            elif event.style in zh_dialogue_styles:
+                # Unmatched Chinese dialogue event
+                event.style = 'Bilingual'
+
+        # Combine merged dialogue + en non-dialogue, sort by time
+        all_events = merged_dialogue + en_non_dialogue
+        all_events.sort(key=lambda e: (e.start, e.end))
+
+        # Build styles list: en styles + Bilingual style
+        styles = list(english_sub.styles)
+
+        # Parse resolution from English script_info for font sizing
+        play_res_y = 1080
+        for line in (english_sub.script_info or []):
+            if line.strip().lower().startswith('playresy:'):
+                try:
+                    play_res_y = int(line.split(':', 1)[1].strip())
+                except ValueError:
+                    pass
+
+        # Scale font size based on resolution
+        bilingual_font_size = max(40, int(play_res_y * 0.048))
+
+        # Find the Format line to match field order
+        format_line = None
+        for s in styles:
+            if s.strip().lower().startswith('format:'):
+                format_line = s
+                break
+
+        if not format_line:
+            # Add format line if missing
+            styles.insert(0 if not styles else 1,
+                         'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, '
+                         'OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, '
+                         'ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, '
+                         'Alignment, MarginL, MarginR, MarginV, Encoding')
+
+        # Add Bilingual style: CJK font, bottom-center alignment, suitable for two-line display
+        bilingual_style = (
+            f'Style: Bilingual,Microsoft YaHei,{bilingual_font_size},'
+            f'&H00FFFFFF,&H000000FF,&H00000000,&H80000000,'
+            f'-1,0,0,0,100,100,0,0,1,3,1,2,15,15,50,1'
+        )
+        styles.append(bilingual_style)
+
+        # Create output file with preserved metadata
+        output_sub = SubtitleFile(
+            path=output_path,
+            format=SubtitleFormat.ASS,
+            events=all_events,
+            styles=styles,
+            script_info=english_sub.script_info
+        )
+
+        SubtitleFormatFactory.write_file(output_sub, output_path)
+        logger.info(f"ASS merge complete: {len(all_events)} total events -> {output_path}")
+        return True
+
+    def process_video(self, video_path: Path,
                      chinese_sub: Optional[Path] = None,
                      english_sub: Optional[Path] = None,
                      output_format: str = "srt",
