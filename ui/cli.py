@@ -142,6 +142,9 @@ For detailed help on any command:
         # Extract command (mkvextract integration)
         self._add_extract_parser(subparsers)
 
+        # Sync command (auto-align external subtitles to embedded tracks)
+        self._add_sync_parser(subparsers)
+
         # Interactive command
         self._add_interactive_parser(subparsers)
 
@@ -636,6 +639,52 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
         extract_parser.add_argument('--lang', nargs='+',
                                    help='Extract tracks matching these language codes (e.g., eng chi jpn)')
 
+    def _add_sync_parser(self, subparsers):
+        """Add sync command parser for auto-aligning external subtitles."""
+        sync_parser = subparsers.add_parser(
+            'sync',
+            help='Auto-align external subtitles to embedded video tracks',
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description='''Auto-detect and correct timing offset between external subtitles
+and embedded video subtitle tracks.
+
+Uses ffprobe packet reading for near-instant timestamp extraction from
+embedded tracks (no full extraction needed), then compares against external
+SRT timestamps to detect and apply the offset.
+
+SINGLE FILE MODE:
+  biss sync subtitle.srt --video movie.mkv
+  biss sync subtitle.srt --video movie.mkv --track 5
+  biss sync subtitle.srt --video movie.mkv --lang chi
+  biss sync subtitle.srt --video movie.mkv --dry-run
+
+BATCH MODE (match .mkv to .srt by filename):
+  biss sync --directory /path/to/season/
+  biss sync --directory /path/to/season/ --lang chi
+  biss sync --directory /path/to/season/ --dry-run
+
+LIST TRACKS:
+  biss sync --video movie.mkv --list-tracks
+'''
+        )
+
+        sync_parser.add_argument('input', type=Path, nargs='?', default=None,
+                                help='External subtitle file (SRT)')
+        sync_parser.add_argument('--video', type=Path,
+                                help='Video file path (required for single-file mode)')
+        sync_parser.add_argument('--directory', '-D', type=Path,
+                                help='Directory for batch mode (matches .mkv to .srt by filename)')
+        sync_parser.add_argument('--track', '-t', type=int, default=None,
+                                help='Subtitle stream relative index (e.g. 5 for s:5)')
+        sync_parser.add_argument('--lang', '-l', type=str, default=None,
+                                help='Subtitle language code (e.g. chi, eng, jpn)')
+        sync_parser.add_argument('--list-tracks', action='store_true',
+                                help='List available subtitle tracks and exit')
+        sync_parser.add_argument('-b', '--backup', action='store_true', default=True,
+                                help='Create backup before modifying (default: True)')
+        sync_parser.add_argument('--no-backup', action='store_true',
+                                help='Skip backup creation')
+
     def _add_interactive_parser(self, subparsers):
         """Add interactive command parser."""
         interactive_parser = subparsers.add_parser(
@@ -702,6 +751,8 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
                 return self._handle_setup_pgsrip(args)
             elif args.command == 'extract':
                 return self._handle_extract(args)
+            elif args.command == 'sync':
+                return self._handle_sync(args)
             elif args.command == 'interactive':
                 return self._handle_interactive(args)
             elif args.command == 'gui':
@@ -1542,6 +1593,136 @@ NOTE: Requires mkvextract (part of MKVToolNix) to be installed.
 
         except Exception as e:
             logger.error(f"PGSRip setup failed: {e}")
+            return 1
+
+    def _handle_sync(self, args) -> int:
+        """Handle sync command for auto-aligning external subtitles."""
+        from processors.subtitle_sync import SubtitleSync
+
+        syncer = SubtitleSync()
+        backup = not getattr(args, 'no_backup', False)
+        dry_run = getattr(args, 'dry_run', False)
+
+        # List tracks mode
+        if getattr(args, 'list_tracks', False):
+            video_path = args.video
+            if not video_path:
+                # Try directory mode — list tracks from first MKV found
+                if args.directory and args.directory.exists():
+                    mkv_files = sorted(args.directory.glob('*.mkv'))
+                    if mkv_files:
+                        video_path = mkv_files[0]
+                    else:
+                        logger.error("No MKV files found in directory")
+                        return 1
+                else:
+                    logger.error("--list-tracks requires --video or --directory")
+                    return 1
+
+            if not video_path.exists():
+                logger.error(f"Video file not found: {video_path}")
+                return 1
+
+            tracks = syncer.list_subtitle_tracks(video_path)
+            if not tracks:
+                print(f"No subtitle tracks found in {video_path.name}")
+                return 0
+
+            print(f"\nSubtitle tracks in {video_path.name}:")
+            print(f"{'Index':<7} {'Codec':<10} {'Language':<10} {'Type':<6} Title")
+            print("-" * 60)
+            for t in tracks:
+                text_marker = "text" if t['is_text'] else "image"
+                print(f"s:{t['rel_index']:<5} {t['codec']:<10} {t['lang']:<10} "
+                      f"{text_marker:<6} {t['title']}")
+            print()
+            return 0
+
+        # Directory (batch) mode
+        if args.directory:
+            if not args.directory.exists():
+                logger.error(f"Directory not found: {args.directory}")
+                return 1
+
+            results = syncer.sync_directory(
+                directory=args.directory,
+                track_index=args.track,
+                track_lang=args.lang,
+                backup=backup,
+                dry_run=dry_run
+            )
+
+            if not results:
+                print("No matching video + subtitle pairs found")
+                return 1
+
+            # Print results table
+            print(f"\n{'='*70}")
+            print(f"{'SYNC RESULTS' if not dry_run else 'SYNC DETECTION (DRY RUN)'}")
+            print(f"{'='*70}")
+
+            success_count = 0
+            for r in results:
+                status = "OK" if r.success else "FAIL"
+                if r.success:
+                    success_count += 1
+                print(f"[{status}] {r.subtitle.name}")
+                print(f"      Offset: {r.offset_ms:+d}ms | "
+                      f"Shift: {r.shift_applied_ms:+d}ms | "
+                      f"Matches: {r.match_count}/{r.total_compared} | "
+                      f"Track: {r.track_used}")
+                if r.message and not r.success:
+                    print(f"      {r.message}")
+
+            print(f"\nTotal: {len(results)} files, "
+                  f"{success_count} successful, "
+                  f"{len(results) - success_count} failed")
+            return 0 if success_count == len(results) else 1
+
+        # Single file mode
+        if not args.input:
+            logger.error("Please specify a subtitle file or use --directory for batch mode")
+            print("\nUsage examples:")
+            print('  biss sync subtitle.srt --video movie.mkv')
+            print('  biss sync --directory /path/to/season/ --lang chi')
+            print('  biss sync --video movie.mkv --list-tracks')
+            return 1
+
+        if not args.input.exists():
+            logger.error(f"Subtitle file not found: {args.input}")
+            return 1
+
+        if not args.video:
+            logger.error("--video is required for single-file mode")
+            return 1
+
+        if not args.video.exists():
+            logger.error(f"Video file not found: {args.video}")
+            return 1
+
+        result = syncer.sync_file(
+            video_path=args.video,
+            srt_path=args.input,
+            track_index=args.track,
+            track_lang=args.lang,
+            backup=backup,
+            dry_run=dry_run
+        )
+
+        if result.success:
+            print(f"\n{'='*60}")
+            print("SYNC RESULT")
+            print(f"{'='*60}")
+            print(f"  Video:    {result.video.name}")
+            print(f"  Subtitle: {result.subtitle.name}")
+            print(f"  Track:    {result.track_used}")
+            print(f"  Offset:   {result.offset_ms:+d}ms")
+            print(f"  Shift:    {result.shift_applied_ms:+d}ms")
+            print(f"  Matches:  {result.match_count}/{result.total_compared}")
+            print(f"  {result.message}")
+            return 0
+        else:
+            logger.error(f"Sync failed: {result.message}")
             return 1
 
     def _handle_interactive(self, args) -> int:
