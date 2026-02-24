@@ -1215,6 +1215,10 @@ After installation, restart this application."""
                        command=self._update_convert_type, state=pgs_state)
         self._pgs_radio.pack(anchor='w')
 
+        ttk.Radiobutton(type_frame, text="Sync external subtitle to video (auto-detect timing offset)",
+                       variable=self.convert_type_var, value="sync",
+                       command=self._update_convert_type).pack(anchor='w')
+
         # File selection
         file_frame = ttk.LabelFrame(tab, text="Subtitle File", padding="10")
         file_frame.pack(fill=tk.X, pady=(0, 10))
@@ -1321,6 +1325,42 @@ After installation, restart this application."""
 
         # Store detected PGS tracks
         self._pgs_detected_tracks = []
+
+        # === Sync options (hidden by default) ===
+        self.sync_options_frame = ttk.LabelFrame(tab, text="Sync Options", padding="10")
+
+        # Video file picker
+        sync_video_row = ttk.Frame(self.sync_options_frame)
+        sync_video_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(sync_video_row, text="Video file:").pack(side=tk.LEFT)
+        self.sync_video_var = tk.StringVar()
+        ttk.Entry(sync_video_row, textvariable=self.sync_video_var, width=45).pack(
+            side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(sync_video_row, text="Browse...",
+                  command=self._browse_sync_video).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Track selection dropdown
+        sync_track_row = ttk.Frame(self.sync_options_frame)
+        sync_track_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(sync_track_row, text="Track:").pack(side=tk.LEFT)
+        self.sync_track_var = tk.StringVar()
+        self.sync_track_combo = ttk.Combobox(sync_track_row, textvariable=self.sync_track_var,
+                                              width=50, state='readonly')
+        self.sync_track_combo.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Button(sync_track_row, text="Load Tracks",
+                  command=self._load_sync_tracks).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Detect / Sync buttons
+        sync_btn_row = ttk.Frame(self.sync_options_frame)
+        sync_btn_row.pack(fill=tk.X, pady=(5, 0))
+        ttk.Button(sync_btn_row, text="Detect Offset",
+                  command=self._detect_sync_offset).pack(side=tk.LEFT, padx=(0, 5))
+        self.sync_result_var = tk.StringVar(value="")
+        ttk.Label(sync_btn_row, textvariable=self.sync_result_var,
+                 font=('TkDefaultFont', 9)).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Store sync track data
+        self._sync_tracks_data = []
 
         # Execute button
         btn_frame = ttk.Frame(tab)
@@ -1441,6 +1481,7 @@ After installation, restart this application."""
         self.encoding_options_frame.pack_forget()
         self.ass_options_frame.pack_forget()
         self.pgs_options_frame.pack_forget()
+        self.sync_options_frame.pack_forget()
 
         if conv_type == "encoding":
             self.encoding_options_frame.pack(fill=tk.X, pady=(0, 10))
@@ -1451,6 +1492,9 @@ After installation, restart this application."""
         elif conv_type == "pgs_ocr":
             self.pgs_options_frame.pack(fill=tk.X, pady=(0, 10))
             self.convert_btn.config(text="Convert PGS to SRT", command=self._execute_pgs_convert)
+        elif conv_type == "sync":
+            self.sync_options_frame.pack(fill=tk.X, pady=(0, 10))
+            self.convert_btn.config(text="Sync Subtitle", command=self._execute_sync)
 
     def _browse_ass_output(self):
         """Browse for ASS conversion output file."""
@@ -1952,12 +1996,165 @@ After installation, restart this application."""
                 ("All files", "*.*")
             ]
             title = "Select Video or Subtitle File"
+        elif self.convert_type_var.get() == 'sync':
+            filetypes = [("SRT files", "*.srt"), ("Subtitle files", "*.srt *.ass *.ssa *.vtt"), ("All files", "*.*")]
+            title = "Select External Subtitle File"
         else:
             filetypes = [("Subtitle files", "*.srt *.ass *.ssa *.vtt"), ("All files", "*.*")]
             title = "Select Subtitle File"
         path = filedialog.askopenfilename(title=title, filetypes=filetypes)
         if path:
             self.convert_file_var.set(path)
+
+    def _browse_sync_video(self):
+        """Browse for video file for sync operation."""
+        filetypes = [("Video files", "*.mkv *.mp4 *.avi *.mov *.webm *.ts"), ("All files", "*.*")]
+        path = filedialog.askopenfilename(title="Select Video File", filetypes=filetypes)
+        if path:
+            self.sync_video_var.set(path)
+            # Auto-load tracks
+            self._load_sync_tracks()
+
+    def _load_sync_tracks(self):
+        """Load subtitle tracks from video for sync track selection."""
+        video_path = self.sync_video_var.get().strip()
+        if not video_path or not Path(video_path).exists():
+            messagebox.showerror("Error", "Please select a valid video file first")
+            return
+
+        def do_load():
+            try:
+                from processors.subtitle_sync import SubtitleSync
+                syncer = SubtitleSync()
+                tracks = syncer.list_subtitle_tracks(Path(video_path))
+                text_tracks = [t for t in tracks if t['is_text']]
+
+                self._sync_tracks_data = text_tracks
+
+                labels = ["(auto-detect)"]
+                for t in text_tracks:
+                    label = f"s:{t['rel_index']} {t['lang']} {t['title']} ({t['codec']})"
+                    labels.append(label.strip())
+
+                self.root.after(0, lambda: self._update_sync_track_combo(labels))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to load tracks: {e}"))
+
+        threading.Thread(target=do_load, daemon=True).start()
+
+    def _update_sync_track_combo(self, labels):
+        """Update the sync track combobox with available tracks."""
+        self.sync_track_combo['values'] = labels
+        if labels:
+            self.sync_track_combo.current(0)
+
+    def _detect_sync_offset(self):
+        """Detect timing offset without applying changes."""
+        sub_path = self.convert_file_var.get().strip()
+        video_path = self.sync_video_var.get().strip()
+
+        if not sub_path or not Path(sub_path).exists():
+            messagebox.showerror("Error", "Please select a subtitle file")
+            return
+        if not video_path or not Path(video_path).exists():
+            messagebox.showerror("Error", "Please select a video file")
+            return
+
+        # Determine selected track
+        track_index = None
+        track_selection = self.sync_track_var.get()
+        if track_selection and not track_selection.startswith("(auto"):
+            try:
+                # Parse "s:5 chi ..." -> 5
+                track_index = int(track_selection.split()[0].split(':')[1])
+            except (ValueError, IndexError):
+                pass
+
+        def do_detect():
+            try:
+                from processors.subtitle_sync import SubtitleSync
+                syncer = SubtitleSync()
+
+                result = syncer.sync_file(
+                    video_path=Path(video_path),
+                    srt_path=Path(sub_path),
+                    track_index=track_index,
+                    dry_run=True
+                )
+
+                if result.success:
+                    msg = (f"Offset: {result.offset_ms:+d}ms | "
+                           f"Matches: {result.match_count}/{result.total_compared} | "
+                           f"Track: {result.track_used}")
+                    self.root.after(0, lambda: self.sync_result_var.set(msg))
+                else:
+                    self.root.after(0, lambda: self.sync_result_var.set(f"Failed: {result.message}"))
+
+            except Exception as e:
+                self.root.after(0, lambda: self.sync_result_var.set(f"Error: {e}"))
+            finally:
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        self._set_status("Detecting offset...")
+        self.sync_result_var.set("Detecting...")
+        threading.Thread(target=do_detect, daemon=True).start()
+
+    def _execute_sync(self):
+        """Execute the sync operation (detect offset and apply)."""
+        sub_path = self.convert_file_var.get().strip()
+        video_path = self.sync_video_var.get().strip()
+
+        if not sub_path or not Path(sub_path).exists():
+            messagebox.showerror("Error", "Please select a subtitle file")
+            return
+        if not video_path or not Path(video_path).exists():
+            messagebox.showerror("Error", "Please select a video file")
+            return
+
+        # Determine selected track
+        track_index = None
+        track_selection = self.sync_track_var.get()
+        if track_selection and not track_selection.startswith("(auto"):
+            try:
+                track_index = int(track_selection.split()[0].split(':')[1])
+            except (ValueError, IndexError):
+                pass
+
+        def do_sync():
+            try:
+                from processors.subtitle_sync import SubtitleSync
+                syncer = SubtitleSync()
+
+                result = syncer.sync_file(
+                    video_path=Path(video_path),
+                    srt_path=Path(sub_path),
+                    track_index=track_index,
+                    backup=True,
+                    dry_run=False
+                )
+
+                if result.success:
+                    msg = (f"Sync complete!\n\n"
+                           f"Offset detected: {result.offset_ms:+d}ms\n"
+                           f"Shift applied: {result.shift_applied_ms:+d}ms\n"
+                           f"Matches: {result.match_count}/{result.total_compared}\n"
+                           f"Track: {result.track_used}")
+                    self.root.after(0, lambda: messagebox.showinfo("Sync Result", msg))
+                    self.root.after(0, lambda: self.sync_result_var.set(
+                        f"Applied: {result.shift_applied_ms:+d}ms"))
+                else:
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Sync Failed", result.message))
+                    self.root.after(0, lambda: self.sync_result_var.set(
+                        f"Failed: {result.message}"))
+
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Sync failed: {e}"))
+            finally:
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        self._set_status("Syncing subtitle...")
+        threading.Thread(target=do_sync, daemon=True).start()
 
     def _browse_merge_video(self):
         """Browse for video file."""
