@@ -232,8 +232,10 @@ The tool auto-detects subtitle languages from:
                                 help='Force PGS subtitle conversion even when other subtitles exist')
         merge_parser.add_argument('--no-pgs', action='store_true',
                                 help='Disable PGS auto-activation (skip PGS conversion)')
+        merge_parser.add_argument('--no-auto-sync', action='store_true',
+                                help='Disable automatic timing sync detection and correction before merging')
         merge_parser.add_argument('--enable-mixed-realignment', action='store_true',
-                                help='Enable enhanced realignment for mixed embedded+external tracks with major timing misalignment')
+                                help='(Legacy) Auto-sync is now enabled by default; use --no-auto-sync to disable')
         merge_parser.add_argument('--top', type=str, default='first',
                                 choices=['first', 'second'],
                                 help='Which subtitle appears on top: first (default) or second')
@@ -945,6 +947,9 @@ LIST TRACKS:
             getattr(args, 'manual_align', False)
         )
 
+        # Auto-sync is enabled by default, disabled with --no-auto-sync
+        auto_sync = not getattr(args, 'no_auto_sync', False)
+
         # Get top_language setting
         top_language = getattr(args, 'top', 'first')
 
@@ -959,7 +964,7 @@ LIST TRACKS:
                 reference_language_preference=getattr(args, 'reference_language', 'auto'),
                 force_pgs=getattr(args, 'force_pgs', False),
                 no_pgs=getattr(args, 'no_pgs', False),
-                enable_mixed_realignment=getattr(args, 'enable_mixed_realignment', False),
+                enable_mixed_realignment=auto_sync,
                 top_language=top_language
             )
             logger.info(f"Enhanced alignment enabled: auto_align={args.auto_align}, "
@@ -968,6 +973,7 @@ LIST TRACKS:
             merger = BilingualMerger(
                 force_pgs=getattr(args, 'force_pgs', False),
                 no_pgs=getattr(args, 'no_pgs', False),
+                enable_mixed_realignment=auto_sync,
                 top_language=top_language
             )
 
