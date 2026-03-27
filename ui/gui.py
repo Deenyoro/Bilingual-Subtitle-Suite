@@ -488,6 +488,14 @@ class BISSGui:
         ttk.Checkbutton(row1, text="Use translation API",
                        variable=self.merge_translation_var).pack(side=tk.LEFT, padx=(20, 0))
 
+        # Row 1.5: Auto-sync option
+        row1b = ttk.Frame(options_frame)
+        row1b.pack(fill=tk.X, pady=(0, 5))
+
+        self.merge_autosync_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(row1b, text="Auto-sync timing before merge (detect and fix misaligned subtitles)",
+                       variable=self.merge_autosync_var).pack(side=tk.LEFT)
+
         # Row 2: Format and threshold
         row2 = ttk.Frame(options_frame)
         row2.pack(fill=tk.X)
@@ -2365,6 +2373,7 @@ After installation, restart this application."""
         output_path = self.merge_output_var.get().strip() or None
         auto_align = self.merge_autoalign_var.get()
         use_translation = self.merge_translation_var.get()
+        auto_sync = self.merge_autosync_var.get()
         threshold = float(self.merge_threshold_var.get() or 0.8)
         output_format = self.merge_format_var.get()
         top_language = self.merge_top_var.get()
@@ -2386,6 +2395,7 @@ After installation, restart this application."""
                     auto_align=auto_align,
                     use_translation=use_translation,
                     alignment_threshold=threshold,
+                    enable_mixed_realignment=auto_sync,
                     top_language=top_language,
                     progress_callback=update_progress
                 )

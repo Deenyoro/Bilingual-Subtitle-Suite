@@ -296,8 +296,8 @@ class InteractiveInterface:
                 print("⚠️  Enhanced mixed track realignment DISABLED")
                 print("   Timing preservation will be used (may result in poor alignment)")
         else:
-            # No mixed scenario detected, use standard behavior
-            options['enable_mixed_realignment'] = False
+            # No mixed scenario detected, auto-sync still enabled by default
+            options['enable_mixed_realignment'] = True
 
         return options
     
