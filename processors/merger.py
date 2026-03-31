@@ -995,6 +995,63 @@ class BilingualMerger:
 
         return is_major_misalignment
 
+    def _validate_realignment_offset(self, reference_events: List[SubtitleEvent],
+                                     target_events: List[SubtitleEvent],
+                                     offset: float) -> bool:
+        """
+        Validate that applying the proposed offset actually improves timestamp alignment.
+
+        Compares how many target timestamps find a close match in reference timestamps
+        before vs after applying the offset. Catches false positives from credit lines
+        or bad anchor matches.
+
+        Args:
+            reference_events: Reference track events (timing authority)
+            target_events: Target track events (to be shifted)
+            offset: Proposed time offset in seconds (target_time - reference_time)
+
+        Returns:
+            True if the offset improves alignment, False if it doesn't help
+        """
+        if not reference_events or not target_events:
+            return False
+
+        ref_times = [e.start for e in reference_events]
+        tgt_times = [e.start for e in target_events]
+
+        tolerance = 1.0  # 1 second tolerance for matching
+
+        # Count matches WITHOUT shift (current state)
+        matches_before = 0
+        for t in tgt_times:
+            if any(abs(t - r) < tolerance for r in ref_times):
+                matches_before += 1
+
+        # Count matches WITH shift applied
+        matches_after = 0
+        for t in tgt_times:
+            shifted_t = t - offset
+            if any(abs(shifted_t - r) < tolerance for r in ref_times):
+                matches_after += 1
+
+        logger.info(f"📊 Offset validation: matches_before={matches_before}, "
+                    f"matches_after={matches_after} (offset={offset:+.1f}s)")
+
+        # The shift should significantly improve matching
+        # If pre-shift already matches well, don't apply the shift
+        if matches_before >= matches_after:
+            logger.info(f"📊 Shift would not improve alignment ({matches_before} >= {matches_after})")
+            return False
+
+        # Require meaningful improvement (at least 3 more matches or 50% better)
+        improvement = matches_after - matches_before
+        if improvement < 3 and (matches_before == 0 or improvement / max(matches_before, 1) < 0.5):
+            logger.info(f"📊 Shift improvement too small ({improvement} additional matches)")
+            return False
+
+        logger.info(f"✅ Offset validated: {matches_before} -> {matches_after} matches (+{improvement})")
+        return True
+
     def _handle_mixed_track_realignment(self, events1: List[SubtitleEvent],
                                       events2: List[SubtitleEvent]) -> List[SubtitleEvent]:
         """
@@ -1087,6 +1144,14 @@ class BilingualMerger:
         if abs(time_offset) < 2.0:
             logger.info(f"📊 Anchor found but offset is small ({time_offset:+.3f}s) - tracks are already in sync")
             logger.info("📋 Using comprehensive merge (no realignment needed)")
+            return self._merge_with_comprehensive_preservation(events1, events2)
+
+        # Step 3b: Validate the offset by checking if it actually improves alignment
+        # Compare timestamp correlation before and after applying the shift.
+        # This catches false positives from credit/translator lines at file start.
+        if not self._validate_realignment_offset(embedded_events, external_events, time_offset):
+            logger.info("📊 Offset validation failed - shift would not improve alignment")
+            logger.info("📋 Using comprehensive merge (tracks likely already in sync)")
             return self._merge_with_comprehensive_preservation(events1, events2)
 
         # Step 4: Log the realignment plan
