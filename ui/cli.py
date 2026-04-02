@@ -852,6 +852,24 @@ LIST TRACKS:
             if english_path:
                 logger.info(f"  English: {english_path.name}")
 
+            # Warn if either file is already bilingual
+            from core.language_detection import LanguageDetector
+            from core.subtitle_formats import SubtitleFormatFactory
+            for label, path in [("Foreign", chinese_path), ("English", english_path)]:
+                if path and path.exists():
+                    try:
+                        sub = SubtitleFormatFactory.parse_file(path)
+                        if sub and sub.events:
+                            ratio = LanguageDetector.detect_bilingual_events(sub.events)
+                            if ratio > 0.3:
+                                logger.warning(
+                                    f"WARNING: '{path.name}' appears to already be bilingual "
+                                    f"({ratio:.0%} of lines contain both languages). "
+                                    f"Merging may produce duplicate text. "
+                                    f"Consider 'biss sync' to re-time it instead.")
+                    except Exception:
+                        pass
+
             success = merger.merge_subtitle_files(
                 chinese_path=chinese_path,
                 english_path=english_path,

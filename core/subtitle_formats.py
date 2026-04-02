@@ -605,6 +605,15 @@ class ASSParser(SubtitleParser):
                     style = event.style or 'Default'
                     text = event.raw if event.raw else event.text.replace('\n', '\\N')
 
+                    # Strip HTML tags that don't work in ASS format
+                    # Convert <i>...</i> to ASS italic, <b>...</b> to ASS bold, strip the rest
+                    if not event.raw:
+                        text = re.sub(r'<i>', r'{\\i1}', text, flags=re.IGNORECASE)
+                        text = re.sub(r'</i>', r'{\\i0}', text, flags=re.IGNORECASE)
+                        text = re.sub(r'<b>', r'{\\b1}', text, flags=re.IGNORECASE)
+                        text = re.sub(r'</b>', r'{\\b0}', text, flags=re.IGNORECASE)
+                        text = re.sub(r'<[^>]+>', '', text)  # Strip remaining HTML tags
+
                     f.write(f"Dialogue: 0,{start_str},{end_str},{style},,0,0,0,,{text}\n")
 
             logger.info(f"Created ASS file: {output_path}")

@@ -126,6 +126,64 @@ class LanguageDetector:
         return lang_code.lower() in ENGLISH_CODES
     
     @staticmethod
+    def is_bilingual_text(text: str) -> bool:
+        """
+        Check if text contains both CJK and English content (bilingual).
+
+        Args:
+            text: Text to analyze (typically a subtitle event's text)
+
+        Returns:
+            True if text contains both CJK characters and English words
+        """
+        import re
+        # Strip formatting tags (ASS, HTML), URLs, and common non-dialogue fragments
+        clean = re.sub(r'\{[^}]*\}|<[^>]*>', '', text)
+        clean = re.sub(r'https?://\S+|www\.\S+', '', clean)
+
+        has_cjk = any('\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf'
+                      or '\u3040' <= c <= '\u30ff' or '\uac00' <= c <= '\ud7af'
+                      for c in clean)
+
+        # Require substantial English: at least 3 Latin words of 3+ chars each
+        # This avoids false positives from short abbreviations, names, or tag remnants
+        english_words = re.findall(r'[a-zA-Z]{3,}', clean)
+        has_english = len(english_words) >= 3
+
+        return has_cjk and has_english
+
+    @staticmethod
+    def detect_bilingual_events(events, sample_size: int = 30) -> float:
+        """
+        Detect what fraction of subtitle events are bilingual (contain both languages).
+
+        Args:
+            events: List of SubtitleEvent objects
+            sample_size: Number of events to sample
+
+        Returns:
+            Fraction of sampled events that are bilingual (0.0 to 1.0)
+        """
+        if not events:
+            return 0.0
+
+        # Sample events spread across the file, skip first few (often credits)
+        skip = min(5, len(events) // 4)
+        candidates = events[skip:]
+        if not candidates:
+            candidates = events
+
+        step = max(1, len(candidates) // sample_size)
+        sampled = candidates[::step][:sample_size]
+
+        if not sampled:
+            return 0.0
+
+        bilingual_count = sum(1 for e in sampled
+                              if LanguageDetector.is_bilingual_text(e.text))
+        return bilingual_count / len(sampled)
+
+    @staticmethod
     def normalize_language_code(lang_code: str) -> Optional[str]:
         """
         Normalize a language code to standard format.

@@ -194,6 +194,18 @@ class BilingualMerger:
                 lang1, lang2 = self._detect_subtitle_languages(chinese_path, english_path)
                 output_path = self._generate_output_filename(base_file, lang1, lang2, output_format)
 
+            # Check if either input is already bilingual
+            for label, events, path in [('Chinese', chinese_events, chinese_path),
+                                         ('English', english_events, english_path)]:
+                if events and path:
+                    bilingual_ratio = LanguageDetector.detect_bilingual_events(events)
+                    if bilingual_ratio > 0.3:
+                        logger.warning(
+                            f"'{path.name}' appears to already be bilingual "
+                            f"({bilingual_ratio:.0%} of lines contain both languages). "
+                            f"Merging may produce duplicate text. Consider using "
+                            f"'biss sync' to re-time it instead.")
+
             # Check for forced subtitles
             forced_detection = self._detect_forced_subtitles(chinese_events, english_events)
             if forced_detection:
