@@ -2378,6 +2378,29 @@ After installation, restart this application."""
         output_format = self.merge_format_var.get()
         top_language = self.merge_top_var.get()
 
+        # Check if either input file is already bilingual before merging
+        if chinese_path or english_path:
+            try:
+                from core.language_detection import LanguageDetector
+                from core.subtitle_formats import SubtitleFormatFactory
+                for label, path in [("Chinese", chinese_path), ("English", english_path)]:
+                    if path and Path(path).exists():
+                        sub = SubtitleFormatFactory.parse_file(Path(path))
+                        if sub and sub.events:
+                            ratio = LanguageDetector.detect_bilingual_events(sub.events)
+                            if ratio > 0.3:
+                                proceed = messagebox.askyesno(
+                                    "Bilingual Subtitle Detected",
+                                    f"'{Path(path).name}' appears to already be bilingual "
+                                    f"({ratio:.0%} of lines contain both languages).\n\n"
+                                    f"Merging may produce duplicate text. You may want to "
+                                    f"use 'biss sync' to re-time it instead.\n\n"
+                                    f"Proceed with merge anyway?")
+                                if not proceed:
+                                    return
+            except Exception as e:
+                logger.debug(f"Bilingual pre-check failed (non-fatal): {e}")
+
         def update_progress(step_name: str, current: int, total: int):
             """Update progress bar and label from merger callback."""
             if total > 0:
