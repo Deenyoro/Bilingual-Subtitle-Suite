@@ -158,6 +158,34 @@ def enable_drag_and_drop(root: tk.Misc) -> tuple[bool, str]:
 TAB_KEYS = ["merge", "extract", "split", "shift", "convert", "batch"]
 
 
+def _sync_to_new_file(syncer, video_path: Path, sub_path: Path, target: Path, track_index):
+    """Detect the offset on ``sub_path`` and write the shifted copy to ``target``.
+
+    Nothing is written to ``target`` unless detection succeeded, so a failure
+    leaves any existing file at ``target`` exactly as it was.
+    """
+    import shutil
+
+    from processors.timing_adjuster import TimingAdjuster
+
+    result = syncer.detect_offset(video_path, sub_path, track_index, None)
+    if not result.success:
+        return result
+    if result.offset_ms == 0:
+        shutil.copy2(sub_path, target)
+        result.message = "No offset detected - subtitles appear to be in sync"
+        return result
+    shift_ms = -result.offset_ms
+    if TimingAdjuster(create_backup=False).adjust_by_offset(sub_path, shift_ms, output_path=target):
+        result.message = (f"Shifted by {shift_ms:+d}ms (offset was {result.offset_ms:+d}ms, "
+                          f"{result.match_count}/{result.total_compared} matches)")
+        result.subtitle = target
+    else:
+        result.success = False
+        result.message = f"Failed to apply timing shift of {shift_ms:+d}ms"
+    return result
+
+
 def _resource_path(*parts: str) -> Path:
     """Path of a bundled data file (works from source and from the PyInstaller exe)."""
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
@@ -3154,8 +3182,10 @@ class BISSGui(DragDropMixin):
         """Detect the offset and apply it.
 
         Convert > Sync fixes the file in place (a backup is kept). Shift Timing >
-        Match a video can write a new file: the original is copied first and the
-        copy is synced, so the original stays untouched.
+        Match a video can write a new file instead. In that case the offset is
+        detected on the untouched original first and the target is written only
+        once detection has succeeded, so a failed sync never leaves an unshifted
+        copy (or replaces a good earlier result) under the output name.
         """
         if self._bars[key].busy:
             return
@@ -3166,13 +3196,11 @@ class BISSGui(DragDropMixin):
         target = Path(output_path) if output_path else sub_path
 
         def work(cancel):
-            import shutil
-
             from processors.subtitle_sync import SubtitleSync
-            if target != sub_path:
-                shutil.copy2(sub_path, target)
-            return SubtitleSync().sync_file(video_path=video_path, srt_path=target, track_index=track_index,
-                                            backup=backup if target == sub_path else False, dry_run=False)
+            if target == sub_path:
+                return SubtitleSync().sync_file(video_path=video_path, srt_path=target, track_index=track_index,
+                                                backup=backup, dry_run=False)
+            return _sync_to_new_file(SubtitleSync(), video_path, sub_path, target, track_index)
 
         def done(ok, result, cancelled):
             if not ok:
