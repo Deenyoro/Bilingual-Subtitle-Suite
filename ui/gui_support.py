@@ -407,6 +407,42 @@ def parse_mkvinfo_tracks(output: str) -> list[dict[str, Any]]:
 # Batch results
 # --------------------------------------------------------------------------
 
+def without_backup_copies(files: Iterable[Path], root: Path) -> list[Path]:
+    """Drop the timestamped copies that "Keep backups" puts in subtitle_backups/.
+
+    Otherwise a second batch run would convert the first run's backups (and
+    back those up too). Only folders below `root` count, so choosing the
+    backup folder itself still works.
+    """
+    from utils.constants import BACKUP_DIR_NAME
+    kept = []
+    for f in files:
+        try:
+            parts = Path(f).relative_to(root).parts[:-1]
+        except ValueError:
+            parts = ()
+        if BACKUP_DIR_NAME not in parts:
+            kept.append(f)
+    return kept
+
+
+def batch_failure_reason(last_error: str | None, ffmpeg_missing: bool = False) -> str:
+    """Short, translated reason for a failed row in the Batch > Merge results.
+
+    The raw log line stays in Details; known causes get friendly wording, and a
+    missing FFmpeg (the usual real cause) is named instead of its symptom.
+    """
+    text = (last_error or "").strip()
+    no_subs = "No Chinese or English subtitles found" in text
+    if ffmpeg_missing and (no_subs or not text):
+        return t("ui.batch.r_no_ffmpeg")
+    if not text:
+        return t("ui.batch.r_failed")
+    if no_subs:
+        return t("ui.batch.r_no_subs")
+    return t("ui.batch.r_failed_why", reason=text.lstrip("✗❌ ").strip())
+
+
 def summarize_batch_convert(results: dict[str, Any]) -> tuple[bool, str]:
     """(ok, text) for BatchProcessor.process_subtitles_batch results."""
     converted = results.get("successful", 0)

@@ -38,6 +38,7 @@ from ui.gui_support import (
     GuiSettings,
     add_tool_dirs,
     analyze_subtitle,
+    batch_failure_reason,
     describe_subtitle,
     enable_windows_dpi_awareness,
     encoding_name,
@@ -58,6 +59,7 @@ from ui.gui_support import (
     summarize_batch_convert,
     summarize_batch_merge,
     windows_work_area,
+    without_backup_copies,
 )
 from ui.widgets import (
     ERROR,
@@ -3397,7 +3399,8 @@ class BISSGui(DragDropMixin):
             processor = BatchProcessor(auto_confirm=auto_confirm)
 
             if operation == "convert":
-                files = FileHandler.find_subtitle_files(Path(directory), recursive)
+                files = without_backup_copies(FileHandler.find_subtitle_files(Path(directory), recursive),
+                                              Path(directory))
                 if not files:
                     return {"empty": t("ui.batch.no_subs")}
                 if not auto_confirm:
@@ -3427,6 +3430,7 @@ class BISSGui(DragDropMixin):
                 return {"op": "convert", "results": results}
 
             videos = FileHandler.find_video_files(Path(directory), recursive)
+            ffmpeg_missing = bool(missing_tools("ffmpeg"))
             if not videos:
                 return {"empty": t("ui.batch.no_videos")}
 
@@ -3449,7 +3453,7 @@ class BISSGui(DragDropMixin):
                 elif status == "skipped":
                     add_result(f"· {video.name} – {t('ui.batch.r_skipped')}", MUTED)
                 else:
-                    reason = self.log_handler.last_error or t("ui.batch.r_failed")
+                    reason = batch_failure_reason(self.log_handler.last_error, ffmpeg_missing)
                     add_result(f"✖ {video.name} – {reason}", ERROR)
 
             results = processor.process_directory_interactive(
