@@ -98,6 +98,18 @@ def find_available_data_files(lite=False):
     return datas
 
 
+def find_collect_data_packages():
+    """Installed packages whose data files (native libraries, Tcl scripts) must be bundled."""
+    packages = []
+    try:
+        import tkinterdnd2  # noqa: F401 - GUI drag and drop (optional)
+        packages.append("tkinterdnd2")
+        print("  [+] Drag and drop: tkinterdnd2")
+    except ImportError:
+        print("  [-] Drag and drop: tkinterdnd2 not installed (GUI works without it)")
+    return packages
+
+
 def get_hidden_imports():
     """Get list of hidden imports for PyInstaller."""
     hidden = [
@@ -144,6 +156,7 @@ def get_hidden_imports():
         ("PIL.Image", "PIL.Image"),
         ("PIL.ImageTk", "PIL.ImageTk"),
         ("dotenv", "dotenv"),
+        ("tkinterdnd2", "tkinterdnd2"),
     ]
 
     for module, import_name in optional:
@@ -235,6 +248,8 @@ def build(onefile=True, clean=False, lite=False, output_name="biss"):
     # Add data files
     for src, dst in datas:
         cmd.extend(["--add-data", f"{src}{os.pathsep}{dst}"])
+    for package in find_collect_data_packages():
+        cmd.extend(["--collect-data", package])
 
     # Add hidden imports
     for imp in hidden_imports:

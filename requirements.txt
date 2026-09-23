@@ -22,6 +22,10 @@ pysrt>=1.1.0              # SRT subtitle file parsing
 # Optional dependencies for enhanced functionality
 google-cloud-translate>=3.8.0  # Google Cloud Translation API (requires API key)
 
+# GUI drag and drop from Explorer (optional: the GUI works without it).
+# Pinned because the release build bundles its native tkdnd library.
+tkinterdnd2==0.6.3
+
 # Encoding detection (recommended - choose one)
 charset-normalizer>=3.0.0  # Preferred encoding detection library
 # chardet>=5.0.0           # Alternative encoding detection library

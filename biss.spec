@@ -46,8 +46,19 @@ hidden_imports.extend([
     'requests',
 ])
 
+# Optional drag-and-drop support for the GUI (tkinterdnd2 + its native tkdnd
+# library, which PyInstaller only sees as data). The GUI falls back to plain
+# Tk when it is missing, so a build without it still works.
+try:
+    from PyInstaller.utils.hooks import collect_data_files
+    import tkinterdnd2  # noqa: F401
+    hidden_imports += ['tkinterdnd2', 'tkinterdnd2.TkinterDnD']
+    tkdnd_datas = collect_data_files('tkinterdnd2')
+except ImportError:
+    tkdnd_datas = []
+
 # Data files to bundle
-datas = []
+datas = list(tkdnd_datas)
 
 # Bundle images
 images_dir = os.path.join(ROOT, 'images')
