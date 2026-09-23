@@ -20,6 +20,10 @@ from third_party import get_pgsrip_wrapper
 logger = get_logger(__name__)
 
 
+class MergeCancelled(Exception):
+    """Raised from a progress callback to stop a merge at the next step boundary."""
+
+
 class BilingualMerger:
     """Handles merging of Chinese and English subtitles into bilingual tracks."""
 
@@ -74,6 +78,9 @@ class BilingualMerger:
         self.video_handler = VideoContainerHandler()
         self.pgsrip_wrapper = get_pgsrip_wrapper() if not no_pgs else None
         self.progress_callback = progress_callback
+        # Path of the file written by the most recent successful merge, so
+        # callers (the GUI) can offer "Open folder" without guessing the name.
+        self.last_output_path = None  # Path of the last file written
 
         # Initialize track info storage (prevents AttributeError when checking hasattr)
         self._track1_info = {'source_type': 'unknown', 'language': 'unknown'}
@@ -100,6 +107,8 @@ class BilingualMerger:
         if self.progress_callback:
             try:
                 self.progress_callback(step_name, current, total)
+            except MergeCancelled:
+                raise
             except Exception as e:
                 logger.debug(f"Progress callback error: {e}")
 
@@ -193,6 +202,7 @@ class BilingualMerger:
                 base_file = chinese_path or english_path
                 lang1, lang2 = self._detect_subtitle_languages(chinese_path, english_path)
                 output_path = self._generate_output_filename(base_file, lang1, lang2, output_format)
+            self.last_output_path = Path(output_path)
 
             # Check if either input is already bilingual
             for label, events, path in [('Chinese', chinese_events, chinese_path),

@@ -5,6 +5,8 @@ This module provides functionality for processing multiple subtitle files
 and videos in batch operations with progress tracking and error handling.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,6 +15,7 @@ from utils.file_operations import FileHandler
 from .merger import BilingualMerger
 from .converter import EncodingConverter
 from .realigner import SubtitleRealigner
+from utils.constants import VIDEO_EXTENSIONS
 
 logger = get_logger(__name__)
 
@@ -95,6 +98,8 @@ class BatchProcessor:
     def process_subtitles_batch(self, subtitle_paths: List[Path],
                                operation: str = "convert",
                                parallel: bool = True,
+                               progress_callback: Callable[[int, int, Path], None] | None = None,
+                               cancel_event: Any = None,
                                **kwargs) -> Dict[str, Any]:
         """
         Process multiple subtitle files in batch.
@@ -103,6 +108,10 @@ class BatchProcessor:
             subtitle_paths: List of subtitle file paths
             operation: Operation to perform ('convert', 'realign')
             parallel: Whether to use parallel processing
+            progress_callback: Optional callback(done, total, path) called after
+                each file finishes (used by the GUI progress bar)
+            cancel_event: Optional threading.Event; when set, files that have not
+                started yet are skipped and results['cancelled'] is True
             **kwargs: Additional arguments for the operation
             
         Returns:
@@ -126,10 +135,16 @@ class BatchProcessor:
         }
         
         if operation == "convert":
-            if parallel:
-                return self._process_convert_parallel(subtitle_paths, results, **kwargs)
-            else:
-                return self._process_convert_sequential(subtitle_paths, results, **kwargs)
+            self._progress_callback = progress_callback
+            self._cancel_event = cancel_event
+            try:
+                if parallel:
+                    return self._process_convert_parallel(subtitle_paths, results, **kwargs)
+                else:
+                    return self._process_convert_sequential(subtitle_paths, results, **kwargs)
+            finally:
+                self._progress_callback = None
+                self._cancel_event = None
         elif operation == "realign":
             # Realignment requires pairs, handle differently
             logger.warning("Realignment requires subtitle pairs, use process_realign_batch instead")
@@ -213,8 +228,12 @@ class BatchProcessor:
             }
             
             # Process completed tasks
+            done = 0
             for future in as_completed(future_to_path):
+                if future.cancelled():
+                    continue
                 file_path, modified, error = future.result()
+                done += 1
                 
                 if error:
                     results['failed'] += 1
@@ -228,8 +247,27 @@ class BatchProcessor:
                 else:
                     results['unchanged'] += 1
                     logger.debug(f"- Unchanged: {file_path.name}")
+
+                self._report_file_progress(done, len(subtitle_paths), file_path)
+                if self._is_cancelled():
+                    # Drop work that has not started yet; running files finish.
+                    for pending in future_to_path:
+                        pending.cancel()
+                    results['cancelled'] = True
         
         return results
+
+    def _report_file_progress(self, done: int, total: int, file_path: Path) -> None:
+        callback = getattr(self, '_progress_callback', None)
+        if callback:
+            try:
+                callback(done, total, file_path)
+            except Exception as e:  # noqa: BLE001 - never let a UI callback break the batch
+                logger.debug(f"Progress callback error: {e}")
+
+    def _is_cancelled(self) -> bool:
+        event = getattr(self, '_cancel_event', None)
+        return bool(event is not None and event.is_set())
     
     def _process_convert_sequential(self, subtitle_paths: List[Path],
                                    results: Dict[str, Any], **kwargs) -> Dict[str, Any]:
@@ -245,6 +283,9 @@ class BatchProcessor:
             Updated results dictionary
         """
         for i, file_path in enumerate(subtitle_paths, 1):
+            if self._is_cancelled():
+                results['cancelled'] = True
+                break
             logger.debug(f"Processing {i}/{len(subtitle_paths)}: {file_path.name}")
             
             try:
@@ -263,6 +304,8 @@ class BatchProcessor:
                 error_msg = f"Error converting {file_path.name}: {e}"
                 results['errors'].append(error_msg)
                 logger.error(f"✗ {error_msg}")
+
+            self._report_file_progress(i, len(subtitle_paths), file_path)
         
         return results
     
@@ -305,7 +348,13 @@ class BatchProcessor:
 
     def process_directory_interactive(self, directory: Path, pattern: str = "*.mkv",
                                     merger_options: Optional[Dict[str, Any]] = None,
-                                    video_options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                                    video_options: Optional[Dict[str, Any]] = None,
+                                    *,
+                                    recursive: bool = False,
+                                    video_only: bool = False,
+                                    confirm_callback: Callable[[Path, int, int], str] | None = None,
+                                    progress_callback: Callable[[int, int, Path | None], None] | None = None,
+                                    cancel_event: Any = None) -> Dict[str, Any]:
         """
         Process video files in directory with interactive confirmation for each file.
 
@@ -314,6 +363,14 @@ class BatchProcessor:
             pattern: File pattern to match (default: "*.mkv")
             merger_options: Options to pass to BilingualMerger constructor
             video_options: Options to pass to process_video (e.g. chinese_track, english_track)
+            recursive: Also search subdirectories (default False keeps CLI behaviour)
+            video_only: Only keep files with a known video extension
+            confirm_callback: Called as callback(video_file, index, total) instead of
+                input() when auto_confirm is off; must return 'y', 'n' or 'q'.
+                GUIs must pass this: the packaged app has no visible console.
+            progress_callback: Called as callback(index, total, video_file) before
+                each file and callback(total, total, None) at the end
+            cancel_event: Optional threading.Event checked before each file
 
         Returns:
             Dictionary with processing results
@@ -326,7 +383,10 @@ class BatchProcessor:
             return {'total': 0, 'successful': 0, 'failed': 0, 'skipped': 0, 'errors': []}
 
         # Find video files
-        video_files = list(directory.glob(pattern))
+        video_files = list(directory.rglob(pattern) if recursive else directory.glob(pattern))
+        if video_only:
+            video_files = sorted(f for f in video_files
+                                 if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS)
         if not video_files:
             logger.warning(f"No video files found matching pattern '{pattern}' in {directory}")
             return {'total': 0, 'successful': 0, 'failed': 0, 'skipped': 0, 'errors': []}
@@ -347,6 +407,11 @@ class BatchProcessor:
 
         # Process each file with interactive confirmation
         for i, video_file in enumerate(video_files, 1):
+            if cancel_event is not None and cancel_event.is_set():
+                results['cancelled'] = True
+                break
+            if progress_callback:
+                progress_callback(i - 1, len(video_files), video_file)
             print(f"\n{'='*80}")
             print(f"BATCH PROCESSING: FILE {i}/{len(video_files)}")
             print(f"{'='*80}")
@@ -393,6 +458,8 @@ class BatchProcessor:
             if self.auto_confirm:
                 choice = 'y'
                 print(f"Auto-confirm enabled: Processing file...")
+            elif confirm_callback is not None:
+                choice = (confirm_callback(video_file, i, len(video_files)) or 'q').strip().lower()
             else:
                 print(f"\nOptions:")
                 print(f"  y = Yes, process this file")
@@ -440,6 +507,8 @@ class BatchProcessor:
                 results['errors'].append(f"Failed to process: {video_file.name}")
                 print(f"❌ Failed to process: {video_file.name}")
 
+        if progress_callback:
+            progress_callback(len(video_files), len(video_files), None)
         return results
 
     def _find_external_subtitles(self, video_file: Path) -> List[Path]:
