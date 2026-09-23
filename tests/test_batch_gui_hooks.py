@@ -5,13 +5,14 @@ Run with: python -m unittest discover -s tests
 
 import builtins
 import sys
-import tempfile
 import threading
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _scratch import scratch_dir
 
 from processors.batch_processor import BatchProcessor
 from ui.gui_support import summarize_batch_convert, summarize_batch_merge
@@ -28,7 +29,7 @@ class DirectoryMergeHooksTests(unittest.TestCase):
 
     def setUp(self):
         # Fresh temp folder per test (not removed, so runs can be inspected).
-        root = Path(tempfile.mkdtemp(prefix="biss-batch-test-"))
+        root = Path(scratch_dir("biss-batch-test-"))
         (root / "sub").mkdir()
         for rel in ("A.mkv", "notes.txt", "A.en.srt", "sub/B.mp4"):
             (root / rel).write_bytes(b"x")
@@ -110,7 +111,7 @@ class BatchConvertHooksTests(unittest.TestCase):
         return paths
 
     def test_progress_callback_sequential(self):
-        paths = self._files(Path(tempfile.mkdtemp(prefix="biss-batch-test-")))
+        paths = self._files(Path(scratch_dir("biss-batch-test-")))
         seen = []
         results = BatchProcessor().process_subtitles_batch(
             paths, parallel=False, progress_callback=lambda d, t, p: seen.append((d, t)))
@@ -118,7 +119,7 @@ class BatchConvertHooksTests(unittest.TestCase):
         self.assertEqual(results["failed"], 0, results["errors"])
 
     def test_cancel_sequential(self):
-        paths = self._files(Path(tempfile.mkdtemp(prefix="biss-batch-test-")))
+        paths = self._files(Path(scratch_dir("biss-batch-test-")))
         cancel = threading.Event()
         results = BatchProcessor().process_subtitles_batch(
             paths, parallel=False, cancel_event=cancel,
@@ -129,7 +130,7 @@ class BatchConvertHooksTests(unittest.TestCase):
     def test_gui_summary_reads_real_result_keys(self):
         # Regression: the GUI read results['processed'] (KeyError), so every
         # successful batch convert was reported as "Batch operation failed".
-        files = self._files(Path(tempfile.mkdtemp(prefix="biss-batch-test-")))
+        files = self._files(Path(scratch_dir("biss-batch-test-")))
         results = BatchProcessor().process_subtitles_batch(files, parallel=True)
         ok, text = summarize_batch_convert(results)
         self.assertTrue(ok)

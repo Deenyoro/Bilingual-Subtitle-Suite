@@ -8,7 +8,6 @@ Run with: python -m unittest discover -s tests
 import contextlib
 import os
 import sys
-import tempfile
 import threading
 import time
 import unittest
@@ -16,6 +15,8 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _scratch import scratch_dir
 
 from ui import gui_support as gs
 
@@ -57,7 +58,7 @@ class BatchHelperTests(unittest.TestCase):
 class GuiConsistencyTests(unittest.TestCase):
     def setUp(self):
         # Scratch files go to a fresh temp folder (not removed, so runs can be inspected).
-        self.tmp = Path(tempfile.mkdtemp(prefix="biss-gui-r3-test-"))
+        self.tmp = Path(scratch_dir("biss-gui-r3-test-"))
         env = mock.patch.dict(os.environ, {"BISS_CONFIG_DIR": str(self.tmp / "cfg")})
         env.start()
         self.addCleanup(env.stop)

@@ -5,7 +5,6 @@ Run with: python -m unittest discover -s tests
 """
 
 import sys
-import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -13,6 +12,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _scratch import scratch_dir
 
 from processors.batch_processor import BatchProcessor
 from processors.merger import BilingualMerger, MergeCancelled, OverwriteDeclined
@@ -25,7 +26,7 @@ class MergeOverwriteTests(unittest.TestCase):
     """The GUI asks before replacing an existing merged file; the CLI keeps overwriting."""
 
     def setUp(self):
-        self.dir = Path(tempfile.mkdtemp(prefix="biss-r2-merge-"))
+        self.dir = Path(scratch_dir("biss-r2-merge-"))
         self.zh = self.dir / "Movie.zh.srt"
         self.en = self.dir / "Movie.en.srt"
         self.zh.write_text(ZH, encoding="utf-8")
@@ -60,7 +61,7 @@ class BatchPerFileResultTests(unittest.TestCase):
     """The Batch tab lists each file as soon as it is done, with the reason for failures."""
 
     def test_convert_reports_each_file(self):
-        folder = Path(tempfile.mkdtemp(prefix="biss-r2-batch-"))
+        folder = Path(scratch_dir("biss-r2-batch-"))
         good = folder / "a.zh.srt"
         good.write_bytes(ZH.encode("gb18030"))
         fine = folder / "b.en.srt"
@@ -85,7 +86,7 @@ class BatchPerFileResultTests(unittest.TestCase):
         self.assertEqual(results["failed"], 1)
 
     def test_parallel_convert_reports_each_file(self):
-        folder = Path(tempfile.mkdtemp(prefix="biss-r2-batch-"))
+        folder = Path(scratch_dir("biss-r2-batch-"))
         files = []
         for i in range(3):
             f = folder / f"f{i}.en.srt"
@@ -103,7 +104,7 @@ class BatchPerFileResultTests(unittest.TestCase):
         self.assertEqual(sorted(seen), ["f0.en.srt", "f1.en.srt", "f2.en.srt"])
 
     def test_directory_merge_reports_each_video(self):
-        folder = Path(tempfile.mkdtemp(prefix="biss-r2-batch-"))
+        folder = Path(scratch_dir("biss-r2-batch-"))
         for name in ("A.mkv", "B.mkv", "C.mkv"):
             (folder / name).write_bytes(b"x")
         bp = BatchProcessor(auto_confirm=False)

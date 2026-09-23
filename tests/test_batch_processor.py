@@ -4,11 +4,12 @@ Run with: python -m unittest discover -s tests
 """
 
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _scratch import scratch_dir
 
 from processors.batch_processor import BatchProcessor
 
@@ -28,11 +29,10 @@ class BatchConvertTests(unittest.TestCase):
         return [utf8, gbk]
 
     def _run(self, parallel: bool):
-        with tempfile.TemporaryDirectory() as tmp:
-            paths = self._make_files(Path(tmp))
-            results = BatchProcessor(max_workers=2).process_subtitles_batch(
-                paths, operation="convert", parallel=parallel)
-            converted = [p.read_text(encoding="utf-8") for p in paths]
+        paths = self._make_files(scratch_dir("biss-batch-convert-"))
+        results = BatchProcessor(max_workers=2).process_subtitles_batch(
+            paths, operation="convert", parallel=parallel)
+        converted = [p.read_text(encoding="utf-8") for p in paths]
         return results, converted
 
     def test_parallel_convert(self):

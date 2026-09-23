@@ -2,11 +2,12 @@
 output until the offset is known (regression for the r2 critic finding)."""
 
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _scratch import scratch_dir
 
 from processors.subtitle_sync import SyncResult
 
@@ -29,7 +30,7 @@ class SyncToNewFileTests(unittest.TestCase):
     def setUp(self):
         from ui.gui import _sync_to_new_file
         self.run_sync = _sync_to_new_file
-        self.tmp = Path(tempfile.mkdtemp(prefix="biss-sync-test-"))
+        self.tmp = Path(scratch_dir("biss-sync-test-"))
         self.src = self.tmp / "clip.en.srt"
         self.src.write_text(SRC, encoding="utf-8")
         self.target = self.tmp / "clip.en.shifted.srt"

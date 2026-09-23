@@ -7,13 +7,14 @@ Run with: python -m unittest discover -s tests
 import contextlib
 import os
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _scratch import scratch_dir
 
 HAS_DISPLAY = sys.platform in ("win32", "darwin") or bool(os.environ.get("DISPLAY"))
 ZH = "1\n00:00:01,000 --> 00:00:03,000\n你好，世界。\n\n2\n00:00:04,000 --> 00:00:06,000\n我们走吧。\n\n"
@@ -24,7 +25,7 @@ EN = "1\n00:00:01,000 --> 00:00:03,000\nHello, world.\n\n2\n00:00:04,000 --> 00:
 class GuiSmokeTests(unittest.TestCase):
     def setUp(self):
         # Scratch files go to a fresh temp folder (not removed, so runs can be inspected).
-        self.tmp = Path(tempfile.mkdtemp(prefix="biss-gui-test-"))
+        self.tmp = Path(scratch_dir("biss-gui-test-"))
         env = mock.patch.dict(os.environ, {"BISS_CONFIG_DIR": str(self.tmp / "cfg")})
         env.start()
         self.addCleanup(env.stop)

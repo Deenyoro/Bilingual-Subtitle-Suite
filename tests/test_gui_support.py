@@ -6,13 +6,14 @@ Run with: python -m unittest discover -s tests
 import json
 import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _scratch import scratch_dir
 
 from ui import gui_support as gs
 
@@ -20,7 +21,7 @@ from ui import gui_support as gs
 class SettingsTests(unittest.TestCase):
     def setUp(self):
         # Fresh temp folder per test (not removed, so runs can be inspected).
-        self.dir = tempfile.mkdtemp(prefix="biss-settings-test-")
+        self.dir = str(scratch_dir("biss-settings-test-"))
         self.path = Path(self.dir) / "gui_settings.json"
 
     def test_missing_file_gives_defaults(self):
