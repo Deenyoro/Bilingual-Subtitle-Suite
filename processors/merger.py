@@ -23,6 +23,15 @@ logger = get_logger(__name__)
 class MergeCancelled(Exception):
     """Raised from a progress callback to stop a merge at the next step boundary."""
 
+    #: True when the merge stopped because the caller chose not to replace an existing file.
+    overwrite_declined = False
+
+
+class OverwriteDeclined(MergeCancelled):
+    """The output file already exists and confirm_overwrite() said not to replace it."""
+
+    overwrite_declined = True
+
 
 class BilingualMerger:
     """Handles merging of Chinese and English subtitles into bilingual tracks."""
@@ -35,7 +44,8 @@ class BilingualMerger:
                  force_pgs: bool = False, no_pgs: bool = False,
                  enable_mixed_realignment: bool = True,
                  top_language: str = 'first',
-                 progress_callback: Optional[Callable[[str, int, int], None]] = None):
+                 progress_callback: Optional[Callable[[str, int, int], None]] = None,
+                 confirm_overwrite: "Callable[[Path], bool] | None" = None):
         """
         Initialize the bilingual merger.
 
@@ -53,6 +63,9 @@ class BilingualMerger:
             enable_mixed_realignment: Auto-detect and fix timing misalignment before merging (default: True)
             top_language: Which subtitle appears on top ('first', 'second') - first is the primary/foreign language
             progress_callback: Optional callback function(step_name, current, total) for progress updates
+            confirm_overwrite: Optional callback(output_path) -> bool, asked before an existing
+                output file is replaced; False stops the merge with OverwriteDeclined.
+                None (the default, used by the CLI) overwrites as before.
         """
         # Validate alignment threshold
         if not 0.0 <= alignment_threshold <= 1.0:
@@ -78,6 +91,7 @@ class BilingualMerger:
         self.video_handler = VideoContainerHandler()
         self.pgsrip_wrapper = get_pgsrip_wrapper() if not no_pgs else None
         self.progress_callback = progress_callback
+        self.confirm_overwrite = confirm_overwrite
         # Path of the file written by the most recent successful merge, so
         # callers (the GUI) can offer "Open folder" without guessing the name.
         self.last_output_path = None  # Path of the last file written
@@ -203,6 +217,9 @@ class BilingualMerger:
                 lang1, lang2 = self._detect_subtitle_languages(chinese_path, english_path)
                 output_path = self._generate_output_filename(base_file, lang1, lang2, output_format)
             self.last_output_path = Path(output_path)
+            if (self.confirm_overwrite is not None and Path(output_path).exists()
+                    and not self.confirm_overwrite(Path(output_path))):
+                raise OverwriteDeclined(str(output_path))
 
             # Check if either input is already bilingual
             for label, events, path in [('Chinese', chinese_events, chinese_path),
@@ -243,6 +260,8 @@ class BilingualMerger:
             logger.info(f"Successfully created bilingual subtitle: {output_path}")
             return True
 
+        except MergeCancelled:
+            raise
         except Exception as e:
             logger.error(f"Failed to merge subtitle files: {e}")
             return False

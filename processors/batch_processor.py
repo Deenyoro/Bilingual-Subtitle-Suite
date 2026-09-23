@@ -100,6 +100,7 @@ class BatchProcessor:
                                parallel: bool = True,
                                progress_callback: Callable[[int, int, Path], None] | None = None,
                                cancel_event: Any = None,
+                               file_result_callback: Callable[[Path, str, str | None], None] | None = None,
                                **kwargs) -> Dict[str, Any]:
         """
         Process multiple subtitle files in batch.
@@ -112,6 +113,8 @@ class BatchProcessor:
                 each file finishes (used by the GUI progress bar)
             cancel_event: Optional threading.Event; when set, files that have not
                 started yet are skipped and results['cancelled'] is True
+            file_result_callback: Optional callback(path, status, error) called as each
+                file finishes; status is 'converted', 'unchanged' or 'failed'
             **kwargs: Additional arguments for the operation
             
         Returns:
@@ -137,6 +140,7 @@ class BatchProcessor:
         if operation == "convert":
             self._progress_callback = progress_callback
             self._cancel_event = cancel_event
+            self._file_result_callback = file_result_callback
             try:
                 if parallel:
                     return self._process_convert_parallel(subtitle_paths, results, **kwargs)
@@ -145,6 +149,7 @@ class BatchProcessor:
             finally:
                 self._progress_callback = None
                 self._cancel_event = None
+                self._file_result_callback = None
         elif operation == "realign":
             # Realignment requires pairs, handle differently
             logger.warning("Realignment requires subtitle pairs, use process_realign_batch instead")
@@ -240,13 +245,16 @@ class BatchProcessor:
                     error_msg = f"Error converting {file_path.name}: {error}"
                     results['errors'].append(error_msg)
                     logger.error(f"✗ {error_msg}")
+                    self._report_file_result(file_path, 'failed', error)
                 elif modified:
                     results['successful'] += 1
                     results['processed_files'].append(str(file_path))
                     logger.info(f"✓ Converted: {file_path.name}")
+                    self._report_file_result(file_path, 'converted', None)
                 else:
                     results['unchanged'] += 1
                     logger.debug(f"- Unchanged: {file_path.name}")
+                    self._report_file_result(file_path, 'unchanged', None)
 
                 self._report_file_progress(done, len(subtitle_paths), file_path)
                 if self._is_cancelled():
@@ -264,6 +272,14 @@ class BatchProcessor:
                 callback(done, total, file_path)
             except Exception as e:  # noqa: BLE001 - never let a UI callback break the batch
                 logger.debug(f"Progress callback error: {e}")
+
+    def _report_file_result(self, file_path: Path, status: str, error: str | None) -> None:
+        callback = getattr(self, '_file_result_callback', None)
+        if callback:
+            try:
+                callback(file_path, status, error)
+            except Exception as e:  # noqa: BLE001 - never let a UI callback break the batch
+                logger.debug(f"File result callback error: {e}")
 
     def _is_cancelled(self) -> bool:
         event = getattr(self, '_cancel_event', None)
@@ -295,15 +311,18 @@ class BatchProcessor:
                     results['successful'] += 1
                     results['processed_files'].append(str(file_path))
                     logger.info(f"✓ Converted: {file_path.name}")
+                    self._report_file_result(file_path, 'converted', None)
                 else:
                     results['unchanged'] += 1
                     logger.debug(f"- Unchanged: {file_path.name}")
+                    self._report_file_result(file_path, 'unchanged', None)
                     
             except Exception as e:
                 results['failed'] += 1
                 error_msg = f"Error converting {file_path.name}: {e}"
                 results['errors'].append(error_msg)
                 logger.error(f"✗ {error_msg}")
+                self._report_file_result(file_path, 'failed', str(e))
 
             self._report_file_progress(i, len(subtitle_paths), file_path)
         
@@ -354,7 +373,9 @@ class BatchProcessor:
                                     video_only: bool = False,
                                     confirm_callback: Callable[[Path, int, int], str] | None = None,
                                     progress_callback: Callable[[int, int, Path | None], None] | None = None,
-                                    cancel_event: Any = None) -> Dict[str, Any]:
+                                    cancel_event: Any = None,
+                                    result_callback: Callable[[Path, str], None] | None = None
+                                    ) -> Dict[str, Any]:
         """
         Process video files in directory with interactive confirmation for each file.
 
@@ -371,6 +392,8 @@ class BatchProcessor:
             progress_callback: Called as callback(index, total, video_file) before
                 each file and callback(total, total, None) at the end
             cancel_event: Optional threading.Event checked before each file
+            result_callback: Called as callback(video_file, status) when a file is
+                done; status is 'merged', 'failed' or 'skipped'
 
         Returns:
             Dictionary with processing results
@@ -480,6 +503,8 @@ class BatchProcessor:
             elif choice == 'n':
                 print(f"⏭️ Skipping {video_file.name}")
                 results['skipped'] += 1
+                if result_callback:
+                    result_callback(video_file, 'skipped')
                 continue
             elif choice == 's':
                 # Enable manual alignment for this file
@@ -495,6 +520,8 @@ class BatchProcessor:
             else:
                 print(f"Invalid choice '{choice}', skipping file")
                 results['skipped'] += 1
+                if result_callback:
+                    result_callback(video_file, 'skipped')
                 continue
 
             # Update results
@@ -506,6 +533,8 @@ class BatchProcessor:
                 results['failed'] += 1
                 results['errors'].append(f"Failed to process: {video_file.name}")
                 print(f"❌ Failed to process: {video_file.name}")
+            if result_callback:
+                result_callback(video_file, 'merged' if success else 'failed')
 
         if progress_callback:
             progress_callback(len(video_files), len(video_files), None)
