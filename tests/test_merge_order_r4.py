@@ -75,8 +75,9 @@ class SlotOrderTests(unittest.TestCase):
             BilingualMerger(order="sideways")
 
 
-@unittest.skipUnless(HAS_DISPLAY, "needs a display (use xvfb-run)")
-class GuiMergeOrderTests(unittest.TestCase):
+class _GuiCase(unittest.TestCase):
+    """Shared set-up: a fresh window with a Chinese and an English subtitle file."""
+
     def setUp(self):
         self.tmp = scratch_dir("biss-gui-r4-order-")
         env = mock.patch.dict(os.environ, {"BISS_CONFIG_DIR": str(self.tmp / "cfg")})
@@ -121,6 +122,9 @@ class GuiMergeOrderTests(unittest.TestCase):
         self.assertIn("merged.srt", self.app._bars["merge"].message.cget("text"))
         return first_cue_lines(self.out)
 
+
+@unittest.skipUnless(HAS_DISPLAY, "needs a display (use xvfb-run)")
+class GuiMergeOrderTests(_GuiCase):
     def test_swap_then_merge_puts_track_1_on_top(self):
         self._set_tracks(self.zh, self.en)
         self.app._swap_merge_files()
@@ -154,6 +158,55 @@ class GuiMergeOrderTests(unittest.TestCase):
             lines = self._merge()
         self.assertEqual(self.app.chinese_file_var.get(), str(self.en))
         self.assertEqual(lines, ["Hello, world.", "你好，世界。"])
+
+    def test_status_bar_names_the_folder_not_the_same_result_again(self):
+        self._set_tracks(self.zh, self.en)
+        self.app._select_tab("merge")
+        self._merge()
+        self.assertIn("Saved merged.srt", self.app._bars["merge"].message.cget("text"))
+        status = self.app.status_var.get()
+        self.assertNotIn("merged.srt", status)
+        self.assertIn(str(self.tmp), status)
+
+
+@unittest.skipUnless(HAS_DISPLAY, "needs a display (use xvfb-run)")
+class GuiFfmpegGuidanceTests(_GuiCase):
+    """Every screen that needs FFmpeg says so before the user clicks Start."""
+
+    def test_batch_merge_from_videos_shows_the_ffmpeg_note(self):
+        self.app._select_tab("batch")
+        self.app.batch_dir_var.set(str(self.tmp))
+        self.app._apply_environment(["ffmpeg"], [], False)
+        self.app.batch_op_var.set("convert")
+        self.app._update_batch_options()
+        self.assertFalse(self.app.batch_banner.visible)
+        self.app.batch_op_var.set("merge")
+        self.app._update_batch_options()
+        bar = self.app._bars["batch"]
+        self.assertTrue(self.app.batch_banner.visible)
+        self.assertTrue(self.app.batch_banner.buttons.winfo_children())
+        self.assertEqual(bar.icon.cget("text"), "⚠")
+        self.assertIn("FFmpeg", bar.message.cget("text"))
+        self.app._apply_environment([], [], False)
+        self.assertFalse(self.app.batch_banner.visible)
+        self.assertIn("Click Start", bar.message.cget("text"))
+
+    def test_convert_sync_button_is_disabled_without_ffmpeg(self):
+        video = self.tmp / "clip.mkv"
+        video.write_bytes(b"\0")
+        self.app._select_tab("convert")
+        self.app.convert_file_var.set(str(self.en))
+        self.app.convert_type_var.set("sync")
+        self.app._update_convert_type()
+        self.app.sync_video_var.set(str(video))
+        self.app._apply_environment(["ffmpeg"], [], False)
+        self.assertTrue(self.app._bars["convert"].button.instate(["disabled"]))
+        self.app._apply_environment([], [], False)
+        self.assertFalse(self.app._bars["convert"].button.instate(["disabled"]))
+        self.app.convert_type_var.set("encoding")
+        self.app._apply_environment(["ffmpeg"], [], False)
+        self.app._update_convert_type()
+        self.assertFalse(self.app._bars["convert"].button.instate(["disabled"]))
 
 
 if __name__ == "__main__":

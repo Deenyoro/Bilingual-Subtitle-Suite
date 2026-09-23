@@ -185,7 +185,8 @@
       "folder_not_found": "Folder not found: {path}",
       "kept_existing": "Nothing was saved; {name} was kept as it was.",
       "backup_kept": " (backup kept)",
-      "log_copied": "Log copied to the clipboard"
+      "log_copied": "Log copied to the clipboard",
+      "output_folder": "Output folder: {folder}"
     },
     "ft": {
       "subtitles": "Subtitle files",
@@ -591,7 +592,9 @@
       "sum_merged": "{n} merged",
       "sum_skipped": "{n} skipped",
       "sum_sep": ", ",
-      "sum_stopped": "Stopped. "
+      "sum_stopped": "Stopped. ",
+      "banner_ffmpeg": "Reading subtitles inside the videos needs FFmpeg, which was not found. Without it, only subtitle files saved next to each video (e.g. Movie.zh.srt and Movie.en.srt) are merged.",
+      "hint_no_ffmpeg": "FFmpeg is missing, so only subtitle files next to the videos in {folder} will be merged. See the note above."
     },
     "preview": {
       "title": "Preview: {name}",

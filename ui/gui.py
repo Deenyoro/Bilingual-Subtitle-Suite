@@ -963,6 +963,7 @@ class BISSGui(DragDropMixin):
                                    self._tool_banner_actions("ffmpeg"))
         else:
             self.merge_banner.hide()
+        self._refresh_batch_banner(keep_result=True)
         for banner, buttons in getattr(self, "_sync_ffmpeg_ui", {}).values():
             if missing["ffmpeg"]:
                 banner.show(t("ui.sync.need_ffmpeg") + " " + install_hint("ffmpeg"),
@@ -1998,7 +1999,7 @@ class BISSGui(DragDropMixin):
                 out = result.get("output")
                 name = out.name if out else t("ui.merge.the_result")
                 bar.finish("success", t("ui.common.saved", name=name), actions=self._output_actions(out))
-                self._set_status("✔ " + t("ui.common.saved", name=name), key)
+                self._status_output(key, out)
             else:
                 self._fail(key, t("ui.merge.failed"), None)
 
@@ -2262,7 +2263,7 @@ class BISSGui(DragDropMixin):
                     text += t("ui.extract.ocr_problems", n=len(failed_ocr))
                 bar.finish("warning" if failed_ocr else "success", text,
                            actions=self._output_actions(outputs[0] if outputs else Path(output_dir), preview=False))
-                self._set_status("✔ " + text, key)
+                self._status_output(key, Path(output_dir), folder=True)
 
         self._run_task(key, t("ui.extract.running", n=len(extract_args)), work, done, cancellable=True)
 
@@ -2411,7 +2412,7 @@ class BISSGui(DragDropMixin):
                 return
             names = t("ui.common.and").join(p.name for p in outputs)
             bar.finish("success", t("ui.common.saved", name=names), actions=self._output_actions(outputs[0]))
-            self._set_status("✔ " + t("ui.common.saved", name=names), key)
+            self._status_output(key, outputs[0])
 
         self._run_task(key, t("ui.split.running"), work, done)
 
@@ -2502,10 +2503,13 @@ class BISSGui(DragDropMixin):
 
     def _build_sync_controls(self, parent, key: str) -> ttk.Combobox:
         """Video + reference track + Detect Offset, for the Shift and Convert tabs."""
-        self._path_row(parent, 0, self.sync_video_var, lambda k=key: self._browse_sync_video(k),
+        # The "FFmpeg missing" notice (Check again / Locate / Download, as on Merge and
+        # Extract) sits above the controls it explains, so it is on screen at 1366x768.
+        banner = Banner(parent, row=0, column=0, sticky="ew", pady=(0, PAD))
+        self._path_row(parent, 1, self.sync_video_var, lambda k=key: self._browse_sync_video(k),
                        label=t("ui.sync.video"), drop=lambda paths, k=key: self._on_sync_video_drop(k, paths))
         track_row = ttk.Frame(parent)
-        track_row.grid(row=1, column=0, sticky="ew", pady=(PAD_S + 2, 0))
+        track_row.grid(row=2, column=0, sticky="ew", pady=(PAD_S + 2, 0))
         track_row.columnconfigure(1, weight=1)
         ttk.Label(track_row, text=t("ui.sync.reference")).grid(row=0, column=0, sticky="w")
         combo = ttk.Combobox(track_row, textvariable=self.sync_track_var, width=50, state='readonly',
@@ -2515,13 +2519,11 @@ class BISSGui(DragDropMixin):
                               command=lambda k=key: self._load_sync_tracks(k))
         load_btn.grid(row=0, column=2, padx=(PAD_S, 0))
         btn_row = ttk.Frame(parent)
-        btn_row.grid(row=2, column=0, sticky="ew", pady=(PAD_S + 2, 0))
+        btn_row.grid(row=3, column=0, sticky="ew", pady=(PAD_S + 2, 0))
         btn_row.columnconfigure(1, weight=1)
         detect_btn = ttk.Button(btn_row, text=t("ui.sync.detect"), command=lambda k=key: self._detect_sync_offset(k))
         detect_btn.grid(row=0, column=0, sticky="nw")
         self._caption(btn_row, textvariable=self.sync_result_var).grid(row=0, column=1, sticky="ew", padx=(PAD, 0))
-        # Same "FFmpeg missing" notice (Check again / Locate / Download) as Merge and Extract.
-        banner = Banner(parent, row=3, column=0, sticky="ew", pady=(PAD, 0))
         self._sync_ffmpeg_ui[key] = (banner, (load_btn, detect_btn))
         return combo
 
@@ -2707,6 +2709,8 @@ class BISSGui(DragDropMixin):
                 hint, kind = t("ui.sync.need_ffmpeg_short"), "warning"
             else:
                 hint, kind = t("ui.sync.ready_in_place", name=name, video=Path(video).name), "hint"
+        # Like Shift > Match a video: no FFmpeg, no clickable "Sync Subtitle".
+        bar.button.state(["disabled"] if mode == "sync" and self._missing.get("ffmpeg") else ["!disabled"])
         bar.set_hint(hint, kind, keep_result=keep_result)
 
     def _browse_shift_file(self):
@@ -2772,7 +2776,7 @@ class BISSGui(DragDropMixin):
             note = t("ui.common.backup_kept") if overwrite and create_backup else ""
             text = t("ui.shift.saved", name=target.name, how=how) + note
             bar.finish("success", text, actions=self._output_actions(target))
-            self._set_status("✔ " + text, key)
+            self._status_output(key, target)
 
         self._run_task(key, t("ui.shift.running"), work, done)
 
@@ -2895,7 +2899,7 @@ class BISSGui(DragDropMixin):
         self.sync_options_frame = self._section(host, 0, t("ui.convert.sync_section"))
         self.sync_track_combo = self._build_sync_controls(self.sync_options_frame, "convert")
         self._caption(self.sync_options_frame, t("ui.convert.sync_moved")).grid(
-            row=4, column=0, sticky="ew", pady=(PAD_S, 0))  # row 3 holds the FFmpeg banner
+            row=4, column=0, sticky="ew", pady=(PAD_S, 0))
         self.sync_video_var.trace_add('write', lambda *a: self._update_convert_hint())
 
         bar = self._add_action_bar("convert", t("ui.convert.button_encoding"), self._execute_convert,
@@ -2981,7 +2985,7 @@ class BISSGui(DragDropMixin):
                 return
             out = Path(result) if result else Path(output_path)
             self._bars[key].finish("success", t("ui.common.saved", name=out.name), actions=self._output_actions(out))
-            self._set_status("✔ " + t("ui.common.saved", name=out.name), key)
+            self._status_output(key, out)
 
         self._run_task(key, t("ui.convert.running_ass"), work, done)
 
@@ -3086,7 +3090,7 @@ class BISSGui(DragDropMixin):
                 return
             self._bars[key].finish("success", t("ui.common.saved", name=output_file.name),
                                    actions=self._output_actions(output_file))
-            self._set_status("✔ " + t("ui.common.saved", name=output_file.name), key)
+            self._status_output(key, output_file)
 
         self._run_task(key, t("ui.convert.pgs_running"), work, done)
 
@@ -3256,7 +3260,7 @@ class BISSGui(DragDropMixin):
                 note = t("ui.common.backup_kept") if target == sub_path and backup else ""
                 text = t("ui.sync.done", name=target.name, s=f"{result.shift_applied_ms / 1000:+.2f}") + note
                 self._bars[key].finish("success", text, actions=self._output_actions(target))
-                self._set_status("✔ " + text, key)
+                self._status_output(key, target)
             else:
                 self.sync_result_var.set(t("ui.sync.error", error=result.message))
                 self._fail(key, t("ui.sync.failed"), result.message)
@@ -3309,7 +3313,7 @@ class BISSGui(DragDropMixin):
                 bar.finish("success", text, actions=self._output_actions(Path(input_path)))
                 self._file_info.pop(input_path, None)
                 self._on_convert_file_changed(keep_result=True)
-                self._set_status("✔ " + text, key)
+                self._status_output(key, Path(input_path))
             else:
                 text = t("ui.convert.no_change", name=name, enc=encoding_name(encoding))
                 bar.finish("info", text)
@@ -3339,6 +3343,8 @@ class BISSGui(DragDropMixin):
         ttk.Radiobutton(op_frame, text=t("ui.batch.op_merge"),
                         variable=self.batch_op_var, value="merge",
                         command=self._update_batch_options).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        # "Merge from videos" reads subtitles inside the videos with FFmpeg.
+        self.batch_banner = Banner(op_frame, row=2, column=0, sticky="ew", pady=(PAD, 0))
 
         dir_frame = self._section(body, 2, t("ui.batch.folder_section"))
         self.batch_dir_var = tk.StringVar()
@@ -3384,20 +3390,33 @@ class BISSGui(DragDropMixin):
         self.batch_backup_check.state(["disabled"] if merge else ["!disabled"])
         self.batch_autoconfirm_check.configure(
             text=t("ui.batch.autoconfirm_merge") if merge else t("ui.batch.autoconfirm"))
-        self._update_batch_hint()
+        self._refresh_batch_banner()
 
-    def _update_batch_hint(self):
+    def _refresh_batch_banner(self, keep_result: bool = False):
+        """Batch "Merge from videos" without FFmpeg: say so on the tab, before Start is clicked."""
+        if self._missing["ffmpeg"] and self.batch_op_var.get() == "merge":
+            self.batch_banner.show(t("ui.batch.banner_ffmpeg") + " " + install_hint("ffmpeg"),
+                                   self._tool_banner_actions("ffmpeg"))
+        else:
+            self.batch_banner.hide()
+        self._update_batch_hint(keep_result=keep_result)
+
+    def _update_batch_hint(self, keep_result: bool = False):
         bar = self._bars.get("batch")
         if bar is None:
             return
         folder = self.batch_dir_var.get().strip()
+        merge = self.batch_op_var.get() == "merge"
         if not folder:
-            bar.set_hint(t("ui.batch.hint_start"))
+            hint, kind = t("ui.batch.hint_start"), "hint"
         elif not Path(folder).is_dir():
-            bar.set_hint(t("ui.common.folder_not_found", path=folder), "warning")
+            hint, kind = t("ui.common.folder_not_found", path=folder), "warning"
+        elif merge and self._missing["ffmpeg"]:
+            hint, kind = t("ui.batch.hint_no_ffmpeg", folder=Path(folder).name or folder), "warning"
         else:
-            what = t("ui.batch.what_merge") if self.batch_op_var.get() == "merge" else t("ui.batch.what_convert")
-            bar.set_hint(t("ui.batch.ready", what=what, folder=Path(folder).name or folder))
+            what = t("ui.batch.what_merge") if merge else t("ui.batch.what_convert")
+            hint, kind = t("ui.batch.ready", what=what, folder=Path(folder).name or folder), "hint"
+        bar.set_hint(hint, kind, keep_result=keep_result)
 
     def _browse_batch_dir(self):
         path = self._ask_dir("folder", t("ui.batch.dlg_folder"))
@@ -3525,7 +3544,7 @@ class BISSGui(DragDropMixin):
             bar.finish("success" if all_ok else "warning", text,
                        actions=[(t("ui.common.open_folder"), lambda: self._reveal(Path(directory)))]
                        + ([] if all_ok else [(t("ui.common.show_details"), lambda: self._toggle_details(True))]))
-            self._set_status(("✔ " if all_ok else "⚠ ") + text, key)
+            self._status_output(key, Path(directory), folder=True)
 
         self._run_task(key, t("ui.batch.starting"), work, done, cancellable=True, determinate=True)
 
@@ -3596,6 +3615,11 @@ class BISSGui(DragDropMixin):
             self._set_status(t('gui.status_ready'), key)
         else:
             self._tab_status.pop(key, None)
+
+    def _status_output(self, key: str, path: Path | None, folder: bool = False):
+        """After a result: the action bar names the file; the status bar says where it is."""
+        where = path if folder else (path.parent if path else None)
+        self._set_status(t("ui.common.output_folder", folder=str(where)) if where else t("gui.status_ready"), key)
 
     def _set_status(self, message: str, key: str | None = None):
         """Status bar text for a tab (shown while that tab is open). Full paths are shortened to names."""

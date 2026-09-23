@@ -118,9 +118,12 @@ class GuiConsistencyTests(unittest.TestCase):
 
     def test_convert_sync_banner_does_not_cover_the_note(self):
         banner, _ = self.app._sync_ffmpeg_ui["convert"]
+        self.app._apply_environment(["ffmpeg"], [], False)
+        self.pump(timeout=0.1)
+        self.assertEqual(int(banner.grid_info()["row"]), 0, "banner sits above the controls it explains")
         rows = [int(w.grid_info()["row"]) for w in self.app.sync_options_frame.grid_slaves()
                 if w is not banner]
-        self.assertNotIn(3, rows)
+        self.assertNotIn(0, rows)
 
     def test_match_video_without_ffmpeg_is_a_warning(self):
         sub = self.tmp / "clip.en.srt"

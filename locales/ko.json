@@ -185,7 +185,8 @@
       "folder_not_found": "폴더를 찾을 수 없습니다: {path}",
       "kept_existing": "저장하지 않았습니다. {name}은(는) 그대로입니다.",
       "backup_kept": " (백업 보관)",
-      "log_copied": "로그를 클립보드에 복사했습니다"
+      "log_copied": "로그를 클립보드에 복사했습니다",
+      "output_folder": "출력 폴더: {folder}"
     },
     "ft": {
       "subtitles": "자막 파일",
@@ -591,7 +592,9 @@
       "sum_merged": "{n}개 병합",
       "sum_skipped": "{n}개 건너뜀",
       "sum_sep": ", ",
-      "sum_stopped": "중지됨. "
+      "sum_stopped": "중지됨. ",
+      "banner_ffmpeg": "동영상 안의 자막을 읽으려면 FFmpeg가 필요하지만 찾을 수 없습니다. FFmpeg가 없으면 각 동영상 옆의 자막 파일(예: Movie.zh.srt, Movie.en.srt)만 병합합니다.",
+      "hint_no_ffmpeg": "FFmpeg가 없어 {folder}에 있는 각 동영상 옆의 자막 파일만 병합합니다. 위의 안내를 확인하세요."
     },
     "preview": {
       "title": "미리 보기: {name}",
