@@ -1263,6 +1263,7 @@ class BISSGui(DragDropMixin):
         self.merge_banner = Banner(video_frame, row=2, column=0, sticky="ew", pady=(PAD, 0))
 
         # --- tracks ---------------------------------------------------------
+        self._track_frames: dict[str, ttk.LabelFrame] = {}
         self._create_track_section(body, 3, "chinese", t("ui.merge.track1"), "Chinese")
         self._create_track_section(body, 4, "english", t("ui.merge.track2"), "English")
 
@@ -1284,6 +1285,9 @@ class BISSGui(DragDropMixin):
                         value="second").pack(side=tk.LEFT, padx=(PAD, 0))
         ttk.Button(row0, text=t("ui.merge.swap"), command=self._swap_merge_files).pack(
             side=tk.LEFT, padx=(PAD_L, 0))
+        # The track titles say which one ends up on top, so they follow "On top".
+        self.merge_top_var.trace_add('write', lambda *a: self._update_track_titles())
+        self._update_track_titles()
 
         self.merge_autosync_var = tk.BooleanVar(value=bool(self.settings.get("merge.autosync", True)))
         ttk.Checkbutton(options, text=t("ui.merge.autosync"),
@@ -1329,8 +1333,16 @@ class BISSGui(DragDropMixin):
         self._update_english_source()
         self._update_merge_hint()
 
+    def _update_track_titles(self):
+        second_on_top = self.merge_top_var.get() == "second"
+        self._track_frames["chinese"].configure(
+            text=t("ui.merge.track1_bottom") if second_on_top else t("ui.merge.track1"))
+        self._track_frames["english"].configure(
+            text=t("ui.merge.track2_top") if second_on_top else t("ui.merge.track2"))
+
     def _create_track_section(self, body, row: int, slot: str, title: str, default_lang: str):
         frame = self._section(body, row, title)
+        self._track_frames[slot] = frame
         radios = ttk.Frame(frame)
         radios.grid(row=0, column=0, sticky="w")
         source_var = tk.StringVar(value="auto")

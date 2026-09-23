@@ -168,6 +168,15 @@ class GuiMergeOrderTests(_GuiCase):
         self.assertNotIn("merged.srt", status)
         self.assertIn(str(self.tmp), status)
 
+    def test_track_titles_follow_on_top(self):
+        frames = self.app._track_frames
+        self.app.merge_top_var.set("second")
+        self.assertEqual(frames["chinese"].cget("text"), "Track 1 (Bottom Subtitle)")
+        self.assertEqual(frames["english"].cget("text"), "Track 2 (Top Subtitle)")
+        self.app.merge_top_var.set("first")
+        self.assertEqual(frames["chinese"].cget("text"), "Track 1 (Top Subtitle)")
+        self.assertEqual(frames["english"].cget("text"), "Track 2 (Bottom Subtitle)")
+
 
 @unittest.skipUnless(HAS_DISPLAY, "needs a display (use xvfb-run)")
 class GuiFfmpegGuidanceTests(_GuiCase):

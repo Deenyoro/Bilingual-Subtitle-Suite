@@ -352,7 +352,9 @@
       "the_result": "the merged subtitle",
       "starting": "Merging: Starting…",
       "status_running": "Merging subtitles…",
-      "banner_ffmpeg": "Reading subtitles inside a video needs FFmpeg, which was not found. Merging two subtitle files works without it."
+      "banner_ffmpeg": "Reading subtitles inside a video needs FFmpeg, which was not found. Merging two subtitle files works without it.",
+      "track1_bottom": "Track 1 (Bottom Subtitle)",
+      "track2_top": "Track 2 (Top Subtitle)"
     },
     "extract": {
       "intro": "Save the subtitle tracks stored inside a video (MKV works best) as separate files.",

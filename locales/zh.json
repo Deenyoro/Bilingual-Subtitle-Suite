@@ -352,7 +352,9 @@
       "the_result": "合并后的字幕",
       "starting": "合并：正在开始…",
       "status_running": "正在合并字幕…",
-      "banner_ffmpeg": "读取视频内的字幕需要 FFmpeg，但没有找到。合并两个字幕文件不需要它。"
+      "banner_ffmpeg": "读取视频内的字幕需要 FFmpeg，但没有找到。合并两个字幕文件不需要它。",
+      "track1_bottom": "轨道 1（下方字幕）",
+      "track2_top": "轨道 2（上方字幕）"
     },
     "extract": {
       "intro": "把视频（MKV 最佳）内嵌的字幕轨道保存为单独的文件。",
