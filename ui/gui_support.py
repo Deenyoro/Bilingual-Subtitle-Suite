@@ -19,6 +19,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from utils.i18n import t
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -171,11 +172,9 @@ def parse_threshold(text: str) -> float:
     try:
         value = float(str(text).strip().replace(",", "."))
     except ValueError:
-        raise ValueError(f"Match strictness must be a number between "
-                         f"{THRESHOLD_MIN} and {THRESHOLD_MAX} (for example 0.8).") from None
+        raise ValueError(t("ui.valid.threshold_number", low=THRESHOLD_MIN, high=THRESHOLD_MAX)) from None
     if not THRESHOLD_MIN <= value <= THRESHOLD_MAX:
-        raise ValueError(f"Match strictness must be between {THRESHOLD_MIN} and {THRESHOLD_MAX} "
-                         f"(you entered {value:g}).")
+        raise ValueError(t("ui.valid.threshold_range", low=THRESHOLD_MIN, high=THRESHOLD_MAX, value=f"{value:g}"))
     return value
 
 
@@ -183,7 +182,7 @@ def parse_timestamp(text: str) -> float:
     """Parse HH:MM:SS[,mmm] into seconds; raises ValueError."""
     m = _TIMESTAMP_RE.match(text or "")
     if not m:
-        raise ValueError("Use the format HH:MM:SS,mmm (for example 00:00:50,000).")
+        raise ValueError(t("ui.valid.timestamp"))
     h, mnt, s, ms = m.groups()
     ms_val = int((ms or "0").ljust(3, "0"))
     return int(h) * 3600 + int(mnt) * 60 + int(s) + ms_val / 1000.0
@@ -197,7 +196,7 @@ def parse_offset(text: str) -> int:
     """
     raw = (text or "").strip().lower().replace(" ", "")
     if not raw:
-        raise ValueError("Enter an offset, for example -2.5s or +1500ms.")
+        raise ValueError(t("ui.valid.offset_empty"))
     sign = 1
     body = raw
     if body[0] in "+-":
@@ -213,12 +212,12 @@ def parse_offset(text: str) -> int:
             return sign * round(float(body[:-1]) * 1000)
         number = float(body)
     except ValueError:
-        raise ValueError("Use e.g. -2.5s, +1500ms or 00:00:02,500.") from None
+        raise ValueError(t("ui.valid.offset_format")) from None
     if number == 0:
         return 0
     # A bare number is ambiguous (the CLI reads "2" as 2 ms); ask for a unit
     # instead of silently guessing.
-    raise ValueError(f"Add a unit: {text.strip()}s (seconds) or {text.strip()}ms (milliseconds).")
+    raise ValueError(t("ui.valid.offset_unit", n=text.strip()))
 
 
 def format_offset(ms: int) -> str:
@@ -252,13 +251,14 @@ ENCODING_NAMES = {
 
 def language_name(code: str | None) -> str:
     if not code or code == "unknown":
-        return "Unknown language"
-    return LANGUAGE_NAMES.get(code.lower(), code.upper())
+        return t("ui.lang.unknown_language")
+    name = LANGUAGE_NAMES.get(code.lower())
+    return t(f"ui.lang.{name.lower()}") if name else code.upper()
 
 
 def encoding_name(enc: str | None) -> str:
     if not enc:
-        return "Unknown encoding"
+        return t("ui.convert.enc_unknown_short")
     key = enc.strip().lower()
     return ENCODING_NAMES.get(key, ENCODING_NAMES.get(key.replace("-", "_"), enc.upper().replace("_", "-")))
 
@@ -273,11 +273,11 @@ def format_duration(seconds: float) -> str:
 def describe_subtitle(info: dict[str, Any]) -> str:
     """One-line summary: "Chinese · 6 lines · 0:19 · UTF-8"."""
     if info.get("error"):
-        return f"Couldn't read this file: {info['error']}"
+        return t("ui.chip.cant_read", error=info['error'])
     parts = [language_name(info.get("language"))]
     if info.get("events") is not None:
         n = info["events"]
-        parts.append(f"{n} line" if n == 1 else f"{n} lines")
+        parts.append(t("ui.chip.one_line") if n == 1 else t("ui.preview.lines", n=n))
     if info.get("duration"):
         parts.append(format_duration(info["duration"]))
     if info.get("encoding"):
@@ -412,25 +412,25 @@ def summarize_batch_convert(results: dict[str, Any]) -> tuple[bool, str]:
     converted = results.get("successful", 0)
     unchanged = results.get("unchanged", 0)
     failed = results.get("failed", 0)
-    parts = [f"{converted} converted", f"{unchanged} already fine"]
+    parts = [t("ui.batch.sum_converted", n=converted), t("ui.batch.sum_fine", n=unchanged)]
     if failed:
-        parts.append(f"{failed} failed")
-    text = ", ".join(parts)
+        parts.append(t("ui.batch.sum_failed", n=failed))
+    text = t("ui.batch.sum_sep").join(parts)
     if results.get("cancelled"):
-        text = "Stopped. " + text
+        text = t("ui.batch.sum_stopped") + text
     return failed == 0, text
 
 
 def summarize_batch_merge(results: dict[str, Any]) -> tuple[bool, str]:
     """(ok, text) for BatchProcessor.process_directory_interactive results."""
-    parts = [f"{results.get('successful', 0)} merged"]
+    parts = [t("ui.batch.sum_merged", n=results.get('successful', 0))]
     if results.get("skipped"):
-        parts.append(f"{results['skipped']} skipped")
+        parts.append(t("ui.batch.sum_skipped", n=results['skipped']))
     if results.get("failed"):
-        parts.append(f"{results['failed']} failed")
-    text = ", ".join(parts)
+        parts.append(t("ui.batch.sum_failed", n=results['failed']))
+    text = t("ui.batch.sum_sep").join(parts)
     if results.get("cancelled"):
-        text = "Stopped. " + text
+        text = t("ui.batch.sum_stopped") + text
     return not results.get("failed"), text
 
 
@@ -476,17 +476,15 @@ def install_hint(group: str) -> str:
     """Short, platform-specific install advice."""
     if group == "ffmpeg":
         if sys.platform == "win32":
-            return ("Install FFmpeg (for example: winget install Gyan.FFmpeg), then click "
-                    "Check again, or use Locate… to point to the folder with ffmpeg.exe.")
+            return t("ui.tools.hint_ffmpeg_win")
         if sys.platform == "darwin":
-            return "Install FFmpeg with: brew install ffmpeg"
-        return "Install FFmpeg with your package manager, e.g. sudo apt install ffmpeg"
+            return t("ui.tools.hint_ffmpeg_mac")
+        return t("ui.tools.hint_ffmpeg_linux")
     if sys.platform == "win32":
-        return ("Install MKVToolNix from mkvtoolnix.download, then click Check again. "
-                "The default install folder is found automatically.")
+        return t("ui.tools.hint_mkv_win")
     if sys.platform == "darwin":
-        return "Install MKVToolNix with: brew install mkvtoolnix"
-    return "Install MKVToolNix with your package manager, e.g. sudo apt install mkvtoolnix"
+        return t("ui.tools.hint_mkv_mac")
+    return t("ui.tools.hint_mkv_linux")
 
 
 DOWNLOAD_PAGES = {

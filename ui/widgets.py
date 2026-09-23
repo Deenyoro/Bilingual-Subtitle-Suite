@@ -18,6 +18,8 @@ from tkinter import font as tkfont
 from tkinter import ttk
 from typing import ClassVar
 
+from utils.i18n import t
+
 # Windows 11 accent colours, used sparingly.
 ACCENT = "#0067C0"
 ACCENT_ACTIVE = "#1975C5"
@@ -26,6 +28,9 @@ SUCCESS = "#0F7B0F"
 ERROR = "#C42B1C"
 WARNING = "#9D5D00"
 MUTED = "#5F5F5F"
+DROP_BG = "#EEF4FB"
+DROP_BG_ACTIVE = "#D9E8F8"
+DROP_BORDER = "#C5D7EA"
 
 # 8 px spacing grid (logical pixels, scaled by Tk for DPI when given as "Np").
 PAD = 8
@@ -113,6 +118,10 @@ def setup_theme(root: tk.Tk) -> dict:
     else:
         bg = style.lookup("TFrame", "background") or "SystemButtonFace"
         style.configure("Accent.TButton", font="BissBold", padding=(16, 4))
+        if theme in ("vista", "xpnative", "winnative"):
+            # The native Windows button ignores background colours, so a bold
+            # label is all "Accent" would give. Draw the blue fill from images.
+            install_image_accent(root, style)
 
     style.configure("TNotebook.Tab", padding=(12, 4))
     style.configure("TLabelframe.Label", font="BissHeading")
@@ -127,7 +136,65 @@ def setup_theme(root: tk.Tk) -> dict:
     style.configure("Banner.TLabel", background="#FFF4CE", foreground="#4D3A00")
     style.configure("Toolbutton", padding=(6, 2))
     style.configure("Status.TFrame", background=bg)
+    # Drop zone on the Merge tab: a light accent tint, stronger while files hover over it.
+    style.configure("Drop.TFrame", background=DROP_BG, relief="solid", borderwidth=1, bordercolor=DROP_BORDER)
+    style.configure("DropActive.TFrame", background=DROP_BG_ACTIVE, relief="solid", borderwidth=1,
+                    bordercolor=ACCENT)
+    style.configure("Drop.TLabel", background=DROP_BG, foreground=MUTED, font="BissCaption")
     return {"theme": theme, "background": bg, "native": native}
+
+
+def _button_image(root: tk.Misc, fill: str, border: str, size: int = 12) -> tk.PhotoImage:
+    """A size x size button face with a 1px border and softly cut corners.
+
+    Pixels that are never written stay transparent, which gives the rounded look.
+    """
+    img = tk.PhotoImage(master=root, width=size, height=size)
+    n = size
+    img.put(fill, to=(1, 1, n - 1, n - 1))
+    img.put(border, to=(2, 0, n - 2, 1))        # top
+    img.put(border, to=(2, n - 1, n - 2, n))    # bottom
+    img.put(border, to=(0, 2, 1, n - 2))        # left
+    img.put(border, to=(n - 1, 2, n, n - 2))    # right
+    for x, y in ((1, 1), (n - 2, 1), (1, n - 2), (n - 2, n - 2)):
+        img.put(border, to=(x, y, x + 1, y + 1))
+    return img
+
+
+def install_image_accent(root: tk.Misc, style: ttk.Style | None = None) -> bool:
+    """Give Accent.TButton a blue, image-based face that works on every ttk theme.
+
+    Used on the native Windows themes, whose button element cannot be
+    recoloured. The focus ring stays, so keyboard users still see focus.
+    Returns False when the element could not be created.
+    """
+    style = style or ttk.Style(root)
+    images = {
+        "normal": _button_image(root, ACCENT, ACCENT_PRESSED),
+        "active": _button_image(root, ACCENT_ACTIVE, ACCENT_PRESSED),
+        "pressed": _button_image(root, ACCENT_PRESSED, "#004A8A"),
+        "disabled": _button_image(root, "#B8C9DB", "#A9BACB"),
+    }
+    root._biss_accent_images = images  # keep references: Tk does not
+    try:
+        style.element_create("BissAccent.border", "image", images["normal"],
+                             ("disabled", images["disabled"]), ("pressed", images["pressed"]),
+                             ("active", images["active"]), border=4, sticky="nsew")
+    except tk.TclError:
+        # Already created (the UI was rebuilt): the element keeps working.
+        pass
+    try:
+        style.layout("Accent.TButton", [
+            ("BissAccent.border", {"sticky": "nsew", "children": [
+                ("Button.padding", {"sticky": "nsew", "children": [
+                    ("Button.focus", {"sticky": "nsew", "children": [
+                        ("Button.label", {"sticky": "nsew"})]})]})]})])
+    except tk.TclError:
+        return False
+    style.configure("Accent.TButton", foreground="white", font="BissBold", padding=(16, 5),
+                    focuscolor="white", anchor="center")
+    style.map("Accent.TButton", foreground=[("disabled", "#F3F3F3")])
+    return True
 
 
 # --------------------------------------------------------------------------
@@ -149,6 +216,7 @@ class ScrollableFrame(ttk.Frame):
         self.body.bind("<Configure>", self._on_body_configure)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         ScrollableFrame._instances[str(self.canvas)] = self
+        self.canvas.bind("<Destroy>", lambda e: ScrollableFrame._instances.pop(str(self.canvas), None), add="+")
         ScrollableFrame._install_wheel(self)
 
     _instances: ClassVar[dict[str, ScrollableFrame]] = {}
@@ -166,7 +234,10 @@ class ScrollableFrame(ttk.Frame):
         self.canvas.configure(scrollregion=(0, 0, w, h))
         # Request the natural size so the window's natural size is known;
         # grid shrinks the canvas (and the scrollbar appears) when space is short.
-        if int(self.canvas.cget("height")) != h or int(self.canvas.cget("width")) != w:
+        # winfo_pixels: Tk 9 returns the option as given ("7c"), Tk 8.6 as pixels.
+        cur_h = self.canvas.winfo_pixels(self.canvas.cget("height"))
+        cur_w = self.canvas.winfo_pixels(self.canvas.cget("width"))
+        if cur_h != h or cur_w != w:
             self.canvas.configure(width=w, height=h)
 
     def _on_canvas_configure(self, event):
@@ -229,6 +300,7 @@ class ActionBar(ttk.Frame):
         self._idle_hint = hint
         self._on_cancel: Callable | None = None
         self.busy = False
+        self.showing_result = False
 
         self.status = ttk.Frame(self)
         self.status.grid(row=0, column=0, sticky="ew")
@@ -241,18 +313,20 @@ class ActionBar(ttk.Frame):
         self.progressbar = ttk.Progressbar(self.status, mode="indeterminate", length=180)
         self.links = ttk.Frame(self.status)
 
-        self.cancel_btn = ttk.Button(self, text="Cancel", command=self._cancel)
+        self.cancel_btn = ttk.Button(self, text=t("ui.common.cancel"), command=self._cancel)
         self.button = ttk.Button(self, text=text, command=command, style="Accent.TButton",
                                  default="active")
         self.button.grid(row=0, column=2, sticky="e", padx=(PAD, 0))
 
     # -- states ---------------------------------------------------------------
-    def set_hint(self, text: str, kind: str = "hint"):
-        """Idle guidance text; replaces any previous result."""
+    def set_hint(self, text: str, kind: str = "hint", keep_result: bool = False):
+        """Idle guidance text; replaces any previous result unless keep_result is set."""
         self._idle_hint = text
-        if not self.busy:
-            self._clear_links()
-            self._show(kind if kind != "hint" else None, text)
+        if self.busy or (keep_result and self.showing_result):
+            return
+        self.showing_result = False
+        self._clear_links()
+        self._show(kind if kind != "hint" else None, text)
 
     def start(self, text: str, cancellable: bool = False, on_cancel: Callable | None = None,
               determinate: bool = False):
@@ -268,7 +342,7 @@ class ActionBar(ttk.Frame):
             self.progressbar.start(12)
         if cancellable:
             self.cancel_btn.state(["!disabled"])
-            self.cancel_btn.configure(text="Cancel")
+            self.cancel_btn.configure(text=t("ui.common.cancel"))
             self.cancel_btn.grid(row=0, column=1, sticky="e", padx=(PAD, 0))
 
     def progress(self, text: str | None = None, value: float | None = None,
@@ -292,11 +366,13 @@ class ActionBar(ttk.Frame):
         self.progressbar.grid_remove()
         self.cancel_btn.grid_remove()
         self.button.state(["!disabled"])
+        self.showing_result = True
         self._show(kind, text, caption=False)
         self._set_links(actions)
 
     def reset(self):
         if not self.busy:
+            self.showing_result = False
             self._clear_links()
             self._show(None, self._idle_hint)
 
@@ -327,8 +403,8 @@ class ActionBar(ttk.Frame):
     def _cancel(self):
         if self._on_cancel:
             self.cancel_btn.state(["disabled"])
-            self.cancel_btn.configure(text="Cancelling…")
-            self.message.configure(text="Cancelling… the current step will finish first.")
+            self.cancel_btn.configure(text=t("ui.common.cancelling"))
+            self.message.configure(text=t("ui.common.cancelling_note"))
             self._on_cancel()
 
 
