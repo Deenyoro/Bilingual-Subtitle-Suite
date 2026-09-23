@@ -197,7 +197,7 @@ class BatchProcessor:
         Returns:
             Updated results dictionary
         """
-        def convert_file(file_path: Path) -> Tuple[Path, bool, Optional[str]]:
+        def convert_file(file_path: Path) -> tuple[Path, bool, Optional[str]]:
             """Convert a single file and return result."""
             try:
                 modified = self.converter.convert_file(file_path, **kwargs)
