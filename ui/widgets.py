@@ -141,6 +141,7 @@ def setup_theme(root: tk.Tk) -> dict:
     style.configure("DropActive.TFrame", background=DROP_BG_ACTIVE, relief="solid", borderwidth=1,
                     bordercolor=ACCENT)
     style.configure("Drop.TLabel", background=DROP_BG, foreground=MUTED, font="BissCaption")
+    style.configure("DropActive.TLabel", background=DROP_BG_ACTIVE, foreground=MUTED, font="BissCaption")
     return {"theme": theme, "background": bg, "native": native}
 
 

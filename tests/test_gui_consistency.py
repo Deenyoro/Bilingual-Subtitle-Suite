@@ -9,6 +9,7 @@ import contextlib
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -134,6 +135,26 @@ class GuiConsistencyTests(unittest.TestCase):
         bar = self.app._bars["shift"]
         self.assertTrue(bar.button.instate(["disabled"]))
         self.assertEqual(bar.icon.cget("text"), "⚠")
+
+    def test_language_check_never_reorders_a_running_merge(self):
+        zh = self.tmp / "b.srt"
+        en = self.tmp / "a.srt"
+        release = threading.Event()
+
+        def slow_detect(path):
+            release.wait(5)
+            return "Chinese" if path.name == "b.srt" else "English"
+
+        self.app.chinese_file_var.set(str(en))
+        self.app.english_file_var.set(str(zh))
+        with mock.patch.object(self.app, "_detect_file_language", side_effect=slow_detect):
+            self.app._order_tracks_by_language([str(en), str(zh)])
+            self.app._bars["merge"].start("Merging…")  # the user clicked Merge meanwhile
+            release.set()
+            self.pump(timeout=0.5)
+        self.app._bars["merge"].finish("cancelled", "Merge stopped")
+        self.assertEqual(self.app.chinese_file_var.get(), str(en))
+        self.assertEqual(self.app.english_file_var.get(), str(zh))
 
 
 if __name__ == "__main__":

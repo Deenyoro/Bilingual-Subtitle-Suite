@@ -1518,7 +1518,9 @@ class BISSGui(DragDropMixin):
             langs = [self._detect_file_language(Path(p)) for p in paths]
 
             def apply():
-                if self._analysis_gen.get("merge-order") != gen:
+                # Never swap tracks under a merge that is already running: the
+                # window would then show a different order from the one merged.
+                if self._analysis_gen.get("merge-order") != gen or self._bars["merge"].busy:
                     return
                 current = [self.chinese_file_var.get(), self.english_file_var.get()]
                 cjk = {'Chinese', 'Japanese', 'Korean'}
@@ -1569,7 +1571,7 @@ class BISSGui(DragDropMixin):
             lang = self._detect_file_language(Path(path))
 
             def apply():
-                if self._analysis_gen.get("merge-order") != gen:
+                if self._analysis_gen.get("merge-order") != gen or self._bars["merge"].busy:
                     return
                 if getattr(self, f"{slot}_file_var").get() != path:
                     return
@@ -1741,10 +1743,22 @@ class BISSGui(DragDropMixin):
         return digits or None
 
     def _preview_dir_path(self) -> Path:
-        """One temp folder per session for extracted preview tracks (reused, not piled up in %TEMP%)."""
+        """Temp folder for extracted preview tracks.
+
+        On Windows %TEMP% is private to the user, so one fixed folder is reused
+        across sessions (files are overwritten) instead of leaving a new folder
+        behind after every run. Elsewhere a private per-session folder is used.
+        """
         if self._preview_dir is None or not self._preview_dir.is_dir():
             import tempfile
-            self._preview_dir = Path(tempfile.mkdtemp(prefix="biss-preview-"))
+            folder = None
+            if sys.platform == "win32":
+                folder = Path(tempfile.gettempdir()) / "biss-preview"
+                try:
+                    folder.mkdir(exist_ok=True)
+                except OSError:
+                    folder = None
+            self._preview_dir = folder or Path(tempfile.mkdtemp(prefix="biss-preview-"))
         return self._preview_dir
 
     def _preview_embedded_track(self, track_type: str):
@@ -1981,6 +1995,9 @@ class BISSGui(DragDropMixin):
             else:
                 self._fail(key, t("ui.merge.failed"), None)
 
+        # A language check still running for freshly added files must not reorder
+        # the tracks now that the user has committed to this order.
+        self._analysis_gen["merge-order"] = self._analysis_gen.get("merge-order", 0) + 1
         self._run_task(key, t("ui.merge.starting"), work, done, cancellable=True, determinate=True,
                        status=t("ui.merge.status_running"))
 
@@ -3544,9 +3561,12 @@ class BISSGui(DragDropMixin):
         for key, handler in tab_handlers.items():
             self.setup_drag_drop(self._tabs[key], handler)
         zone = self.merge_drop_zone
+        label = self.merge_drop_label
         self.setup_drag_drop(zone, self._on_merge_drop,
-                             on_enter=lambda: zone.configure(style="DropActive.TFrame"),
-                             on_leave=lambda: zone.configure(style="Drop.TFrame"))
+                             on_enter=lambda: (zone.configure(style="DropActive.TFrame"),
+                                               label.configure(style="DropActive.TLabel")),
+                             on_leave=lambda: (zone.configure(style="Drop.TFrame"),
+                                               label.configure(style="Drop.TLabel")))
         for entry, handler in self._drop_rows:
             self.setup_drag_drop(entry, handler)
 
