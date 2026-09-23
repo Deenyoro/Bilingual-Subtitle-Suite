@@ -14,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from processors.batch_processor import BatchProcessor
+from ui.gui_support import summarize_batch_convert, summarize_batch_merge
 
 SRT = "1\n00:00:01,000 --> 00:00:02,000\nHello\n\n"
 
@@ -124,6 +125,20 @@ class BatchConvertHooksTests(unittest.TestCase):
             progress_callback=lambda d, t, p: cancel.set())
         self.assertTrue(results.get("cancelled"))
         self.assertEqual(results["successful"] + results["unchanged"] + results["failed"], 1)
+
+    def test_gui_summary_reads_real_result_keys(self):
+        # Regression: the GUI read results['processed'] (KeyError), so every
+        # successful batch convert was reported as "Batch operation failed".
+        files = self._files(Path(tempfile.mkdtemp(prefix="biss-batch-test-")))
+        results = BatchProcessor().process_subtitles_batch(files, parallel=True)
+        ok, text = summarize_batch_convert(results)
+        self.assertTrue(ok)
+        self.assertIn("converted", text)
+
+    def test_merge_summary(self):
+        ok, text = summarize_batch_merge({"successful": 2, "failed": 1, "skipped": 1})
+        self.assertFalse(ok)
+        self.assertEqual(text, "2 merged, 1 skipped, 1 failed")
 
 
 if __name__ == "__main__":
