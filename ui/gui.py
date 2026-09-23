@@ -902,7 +902,7 @@ After installation, restart this application."""
                         f"Extraction failed: {result.stderr}"))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Extraction failed: {e}"))
+                self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Extraction failed: {e}"))
             finally:
                 self.root.after(0, lambda: self.extract_btn.config(state='normal'))
                 self.root.after(0, lambda: self.extract_progress.stop())
@@ -1087,7 +1087,7 @@ After installation, restart this application."""
                         "No Output", "No bilingual content found to split."))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Split Failed", str(e)))
+                self.root.after(0, lambda e=e: messagebox.showerror("Split Failed", str(e)))
             finally:
                 self.root.after(0, lambda: self.split_btn.config(state='normal'))
 
@@ -1563,7 +1563,7 @@ After installation, restart this application."""
                     f"Converted successfully!\n\nOutput: {result_path.name}"))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error",
+                self.root.after(0, lambda e=e: messagebox.showerror("Error",
                     f"Conversion failed: {e}"))
             finally:
                 self.root.after(0, lambda: self.convert_btn.config(state='normal'))
@@ -1631,7 +1631,7 @@ After installation, restart this application."""
 
                 self.root.after(0, update_ui)
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Track detection failed: {e}"))
+                self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Track detection failed: {e}"))
                 self.root.after(0, lambda: self._set_status("Ready"))
 
         threading.Thread(target=do_detect, daemon=True).start()
@@ -1706,7 +1706,7 @@ After installation, restart this application."""
                         "PGS conversion failed - check log for details"))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error",
+                self.root.after(0, lambda e=e: messagebox.showerror("Error",
                     f"PGS conversion failed: {e}"))
             finally:
                 self.root.after(0, lambda: self.convert_btn.config(state='normal'))
@@ -1891,7 +1891,7 @@ After installation, restart this application."""
                 self.root.after(0, update_ui)
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to scan tracks: {e}"))
+                self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Failed to scan tracks: {e}"))
                 self.root.after(0, lambda: self._set_status("Ready"))
 
         threading.Thread(target=do_scan, daemon=True).start()
@@ -1971,7 +1971,7 @@ After installation, restart this application."""
                     self.root.after(0, lambda: messagebox.showerror("Error", "Failed to extract track"))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Preview failed: {e}"))
+                self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Preview failed: {e}"))
             finally:
                 self.root.after(0, lambda: self._set_status("Ready"))
 
@@ -2046,7 +2046,7 @@ After installation, restart this application."""
 
                 self.root.after(0, lambda: self._update_sync_track_combo(labels))
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to load tracks: {e}"))
+                self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Failed to load tracks: {e}"))
 
         threading.Thread(target=do_load, daemon=True).start()
 
@@ -2099,7 +2099,7 @@ After installation, restart this application."""
                     self.root.after(0, lambda: self.sync_result_var.set(f"Failed: {result.message}"))
 
             except Exception as e:
-                self.root.after(0, lambda: self.sync_result_var.set(f"Error: {e}"))
+                self.root.after(0, lambda e=e: self.sync_result_var.set(f"Error: {e}"))
             finally:
                 self.root.after(0, lambda: self._set_status("Ready"))
 
@@ -2157,7 +2157,7 @@ After installation, restart this application."""
                         f"Failed: {result.message}"))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Sync failed: {e}"))
+                self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Sync failed: {e}"))
             finally:
                 self.root.after(0, lambda: self._set_status("Ready"))
 
@@ -2250,7 +2250,7 @@ After installation, restart this application."""
                     self.root.after(0, lambda: messagebox.showerror("Error", "Failed to shift timing"))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Shift failed: {str(e)}"))
+                self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Shift failed: {str(e)}"))
             finally:
                 self.root.after(0, lambda: self._set_status("Ready"))
 
@@ -2297,7 +2297,7 @@ After installation, restart this application."""
                     self.root.after(0, lambda: messagebox.showinfo("Info", "No conversion needed (already correct encoding)"))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Conversion failed: {str(e)}"))
+                self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Conversion failed: {str(e)}"))
             finally:
                 self.root.after(0, lambda: self._set_status("Ready"))
 
@@ -2572,7 +2572,7 @@ After installation, restart this application."""
                     self.root.after(0, lambda: messagebox.showinfo("Complete", msg))
 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Batch operation failed: {str(e)}"))
+                self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Batch operation failed: {str(e)}"))
             finally:
                 self.root.after(0, lambda: self._set_status("Ready"))
                 self.root.after(0, lambda: self.batch_progress_var.set("Ready"))
