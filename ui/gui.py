@@ -1832,6 +1832,10 @@ class BISSGui(DragDropMixin):
         key = "merge"
         if self._bars[key].busy:
             return
+        # A language check still running for freshly added files must not reorder
+        # the tracks now that the user has committed to this order - not even while
+        # the "Replace?" dialog below is open (a modal dialog keeps Tk events running).
+        self._analysis_gen["merge-order"] = self._analysis_gen.get("merge-order", 0) + 1
         video_path = self.merge_video_var.get().strip()
         chinese_source = self.chinese_source_var.get()
         english_source = self.english_source_var.get()
@@ -1954,7 +1958,10 @@ class BISSGui(DragDropMixin):
                 return bool(self._call_in_main(lambda: self._confirm_replace(target), cancel))
 
             logger.info(f"Starting merge operation for: {video_path or 'external files'}")
-            merger = BilingualMerger(progress_callback=progress, confirm_overwrite=confirm_overwrite, **options)
+            # order="slots": "On top: Track 1" means exactly the file shown as Track 1,
+            # even when neither (or both) tracks are Chinese.
+            merger = BilingualMerger(progress_callback=progress, confirm_overwrite=confirm_overwrite,
+                                     order="slots", **options)
             out = Path(output_path) if output_path else None
             try:
                 if video_path and (chinese_source != "external" or english_source != "external"):
@@ -1995,9 +2002,6 @@ class BISSGui(DragDropMixin):
             else:
                 self._fail(key, t("ui.merge.failed"), None)
 
-        # A language check still running for freshly added files must not reorder
-        # the tracks now that the user has committed to this order.
-        self._analysis_gen["merge-order"] = self._analysis_gen.get("merge-order", 0) + 1
         self._run_task(key, t("ui.merge.starting"), work, done, cancellable=True, determinate=True,
                        status=t("ui.merge.status_running"))
 

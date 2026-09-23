@@ -45,7 +45,8 @@ class BilingualMerger:
                  enable_mixed_realignment: bool = True,
                  top_language: str = 'first',
                  progress_callback: Optional[Callable[[str, int, int], None]] = None,
-                 confirm_overwrite: "Callable[[Path], bool] | None" = None):
+                 confirm_overwrite: "Callable[[Path], bool] | None" = None,
+                 *, order: str = 'language'):
         """
         Initialize the bilingual merger.
 
@@ -66,6 +67,11 @@ class BilingualMerger:
             confirm_overwrite: Optional callback(output_path) -> bool, asked before an existing
                 output file is replaced; False stops the merge with OverwriteDeclined.
                 None (the default, used by the CLI) overwrites as before.
+            order: How top_language is read. 'language' (the default, used by the CLI)
+                keeps the historical behaviour, where some merge paths decide the line
+                order from the text itself (CJK first). 'slots' (used by the GUI) makes
+                'first' always mean the chinese_path/Track 1 input and 'second' the
+                english_path/Track 2 input, whatever languages they contain.
         """
         # Validate alignment threshold
         if not 0.0 <= alignment_threshold <= 1.0:
@@ -87,6 +93,12 @@ class BilingualMerger:
         self.no_pgs = no_pgs
         self.enable_mixed_realignment = enable_mixed_realignment
         self.top_language = top_language  # 'first' or 'second'
+        if order not in ('language', 'slots'):
+            raise ValueError(f"order must be 'language' or 'slots', got {order!r}")
+        self.order = order
+        # With order='slots': the texts of each input track, so a combined line can
+        # be put back in Track 1 / Track 2 order whichever merge path produced it.
+        self._slot_texts: tuple[set, set] | None = None
 
         self.video_handler = VideoContainerHandler()
         self.pgsrip_wrapper = get_pgsrip_wrapper() if not no_pgs else None
@@ -143,6 +155,16 @@ class BilingualMerger:
             return text2
         if not text2:
             return text1
+
+        if self.order == 'slots' and self._slot_texts:
+            track1, track2 = self._slot_texts
+            a, b = text1.strip(), text2.strip()
+            a_is_2 = a in track2 and a not in track1
+            b_is_1 = b in track1 and b not in track2
+            a_is_1 = a in track1 and a not in track2
+            b_is_2 = b in track2 and b not in track1
+            if (a_is_2 or b_is_1) and not (a_is_1 or b_is_2):
+                text1, text2 = text2, text1
 
         if self.top_language == 'second':
             return f"{text2}\n{text1}"
@@ -209,6 +231,10 @@ class BilingualMerger:
                         'language': 'english',
                         'path': str(english_path)
                     }
+
+            if self.order == 'slots':
+                self._slot_texts = ({e.text.strip() for e in chinese_events if e.text},
+                                    {e.text.strip() for e in english_events if e.text})
 
             # Generate output path if not provided
             if not output_path:
