@@ -458,6 +458,7 @@
       "load_failed_title": "트랙을 불러올 수 없습니다",
       "need_valid_video": "먼저 올바른 동영상 파일을 선택하세요.",
       "need_ffmpeg": "동영상에 맞추려면 FFmpeg가 필요하지만 찾을 수 없습니다.",
+      "need_ffmpeg_short": "동영상에 맞추려면 FFmpeg가 필요합니다. 위의 안내를 확인하세요.",
       "need_sub": "고칠 자막 파일을 선택하세요.",
       "need_video": "맞출 동영상 파일을 선택하세요.",
       "ready": "준비 완료: {name}을(를) {video}에 맞춥니다.",

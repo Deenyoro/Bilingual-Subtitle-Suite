@@ -458,6 +458,7 @@
       "load_failed_title": "无法读取轨道",
       "need_valid_video": "请先选择有效的视频文件。",
       "need_ffmpeg": "与视频同步需要 FFmpeg，但没有找到。",
+      "need_ffmpeg_short": "与视频同步需要 FFmpeg；请看上方的提示。",
       "need_sub": "请选择要修正的字幕文件。",
       "need_video": "请选择要匹配的视频文件。",
       "ready": "准备就绪：让 {name} 匹配 {video}。",

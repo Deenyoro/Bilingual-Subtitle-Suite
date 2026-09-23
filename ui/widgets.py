@@ -301,6 +301,9 @@ class ActionBar(ttk.Frame):
         self._on_cancel: Callable | None = None
         self.busy = False
         self.showing_result = False
+        # Called (no arguments) whenever the bar shows new idle text or a new
+        # result, so the window's status bar can drop an outdated message.
+        self.on_change: Callable[[], None] | None = None
 
         self.status = ttk.Frame(self)
         self.status.grid(row=0, column=0, sticky="ew")
@@ -327,6 +330,7 @@ class ActionBar(ttk.Frame):
         self.showing_result = False
         self._clear_links()
         self._show(kind if kind != "hint" else None, text)
+        self._changed()
 
     def start(self, text: str, cancellable: bool = False, on_cancel: Callable | None = None,
               determinate: bool = False):
@@ -369,14 +373,20 @@ class ActionBar(ttk.Frame):
         self.showing_result = True
         self._show(kind, text, caption=False)
         self._set_links(actions)
+        self._changed()
 
     def reset(self):
         if not self.busy:
             self.showing_result = False
             self._clear_links()
             self._show(None, self._idle_hint)
+            self._changed()
 
     # -- internals ------------------------------------------------------------
+    def _changed(self):
+        if self.on_change:
+            self.on_change()
+
     def _show(self, kind: str | None, text: str, caption: bool = True):
         icons = {"success": ("✔", "Success.TLabel"), "error": ("✖", "Error.TLabel"),
                  "warning": ("⚠", "Warning.TLabel"), "cancelled": ("–", "Caption.TLabel"),

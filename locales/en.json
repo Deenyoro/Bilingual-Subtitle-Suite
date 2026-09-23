@@ -458,6 +458,7 @@
       "load_failed_title": "Couldn't load tracks",
       "need_valid_video": "Choose a valid video file first.",
       "need_ffmpeg": "Syncing to a video needs FFmpeg, which was not found.",
+      "need_ffmpeg_short": "FFmpeg is needed to match a video; see the note above.",
       "need_sub": "Choose the subtitle file to fix.",
       "need_video": "Choose the video file to match.",
       "ready": "Ready: match {name} to {video}.",

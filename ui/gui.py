@@ -493,6 +493,9 @@ class BISSGui(DragDropMixin):
     def _add_action_bar(self, key: str, text: str, command: Callable, hint: str) -> ActionBar:
         bar = ActionBar(self._tabs[key], text=text, command=command, hint=hint)
         bar.grid(row=2, column=0, sticky="ew")
+        # The action bar is the source of truth: once it moves on (new hint, new
+        # result), an older "Saved …" in the status bar would contradict it.
+        bar.on_change = lambda k=key: self._bar_changed(k)
         self._bars[key] = bar
         return bar
 
@@ -942,7 +945,7 @@ class BISSGui(DragDropMixin):
             self._translation_check.state(["disabled"])
             self._translation_hint.configure(text=t("ui.merge.translation_needs_key"))
         self._refresh_tool_banners()
-        self._validate_shift()
+        self._validate_shift(keep_result=True)
         self._update_convert_hint(keep_result=True)
 
     def _refresh_tool_banners(self):
@@ -960,6 +963,14 @@ class BISSGui(DragDropMixin):
                                    self._tool_banner_actions("ffmpeg"))
         else:
             self.merge_banner.hide()
+        for banner, buttons in getattr(self, "_sync_ffmpeg_ui", {}).values():
+            if missing["ffmpeg"]:
+                banner.show(t("ui.sync.need_ffmpeg") + " " + install_hint("ffmpeg"),
+                            self._tool_banner_actions("ffmpeg"))
+            else:
+                banner.hide()
+            for btn in buttons:
+                btn.state(["disabled"] if missing["ffmpeg"] else ["!disabled"])
 
     def _tool_banner_actions(self, group: str):
         return [(t("ui.tools.check_again"), self._recheck_tools),
@@ -971,6 +982,8 @@ class BISSGui(DragDropMixin):
         self._refresh_tool_banners()
         found = [g for g, m in self._missing.items() if not m]
         self._set_status(t("ui.tools.found", names=", ".join(found)) if found else t("ui.tools.still_missing"))
+        self._validate_shift(keep_result=True)
+        self._update_convert_hint(keep_result=True)
         if not self._missing["ffmpeg"] and self.merge_video_var.get().strip():
             self._scan_video_tracks(quiet=True)
 
@@ -2460,6 +2473,7 @@ class BISSGui(DragDropMixin):
         self._update_shift_output()
 
     def _create_sync_vars(self):
+        self._sync_ffmpeg_ui: dict[str, tuple[Banner, tuple[ttk.Button, ...]]] = {}
         self.sync_video_var = tk.StringVar()
         self.sync_track_var = tk.StringVar(value=t("ui.sync.auto_track"))
         self.sync_result_var = tk.StringVar(value=t("ui.sync.explain"))
@@ -2476,14 +2490,18 @@ class BISSGui(DragDropMixin):
         combo = ttk.Combobox(track_row, textvariable=self.sync_track_var, width=50, state='readonly',
                              values=[t("ui.sync.auto_track")])
         combo.grid(row=0, column=1, sticky="ew", padx=(PAD_S, 0))
-        ttk.Button(track_row, text=t("ui.common.load_tracks"), command=lambda k=key: self._load_sync_tracks(k)).grid(
-            row=0, column=2, padx=(PAD_S, 0))
+        load_btn = ttk.Button(track_row, text=t("ui.common.load_tracks"),
+                              command=lambda k=key: self._load_sync_tracks(k))
+        load_btn.grid(row=0, column=2, padx=(PAD_S, 0))
         btn_row = ttk.Frame(parent)
         btn_row.grid(row=2, column=0, sticky="ew", pady=(PAD_S + 2, 0))
         btn_row.columnconfigure(1, weight=1)
-        ttk.Button(btn_row, text=t("ui.sync.detect"), command=lambda k=key: self._detect_sync_offset(k)).grid(
-            row=0, column=0, sticky="nw")
+        detect_btn = ttk.Button(btn_row, text=t("ui.sync.detect"), command=lambda k=key: self._detect_sync_offset(k))
+        detect_btn.grid(row=0, column=0, sticky="nw")
         self._caption(btn_row, textvariable=self.sync_result_var).grid(row=0, column=1, sticky="ew", padx=(PAD, 0))
+        # Same "FFmpeg missing" notice (Check again / Locate / Download) as Merge and Extract.
+        banner = Banner(parent, row=3, column=0, sticky="ew", pady=(PAD, 0))
+        self._sync_ffmpeg_ui[key] = (banner, (load_btn, detect_btn))
         return combo
 
     def _nudge_offset(self, delta: str):
@@ -2523,14 +2541,18 @@ class BISSGui(DragDropMixin):
             self._shift_output_auto = str(p.with_name(f"{p.stem}.shifted{p.suffix or '.srt'}"))
             self.shift_output_var.set(self._shift_output_auto)
         self._analyze_later("shift", path, lambda info: (self._render_chip(self.shift_chip, info),
-                                                         self._validate_shift()))
+                                                         self._validate_shift(keep_result=True)))
         self._validate_shift()
 
-    def _validate_shift(self) -> str | None:
-        """Enable Apply only when the input is valid; explain what is missing."""
+    def _validate_shift(self, keep_result: bool = False) -> str | None:
+        """Enable Apply only when the input is valid; explain what is missing.
+
+        keep_result: background re-checks (file analysis, tool check) leave a
+        finished run's result strip in place; user edits replace it.
+        """
         if "shift" not in self._bars:
             return None
-        problem = None
+        problem, warn = None, False
         path = self.shift_file_var.get().strip()
         mode = self.shift_mode_var.get()
         ready = t("ui.shift.ready")
@@ -2569,19 +2591,19 @@ class BISSGui(DragDropMixin):
             elif not Path(video).is_file():
                 problem = t("ui.merge.video_not_found", path=video)
             elif self._missing.get("ffmpeg"):
-                problem = t("ui.sync.need_ffmpeg") + " " + install_hint("ffmpeg")
+                problem, warn = t("ui.sync.need_ffmpeg_short"), True
             else:
                 ready = t("ui.sync.ready", name=Path(path).name if path else "", video=Path(video).name)
         if not path:
-            problem = t("ui.shift.hint_file")
+            problem, warn = t("ui.shift.hint_file"), False
         elif not Path(path).is_file():
-            problem = t("ui.common.file_not_found_short")
+            problem, warn = t("ui.common.file_not_found_short"), True
         elif not self.shift_overwrite_var.get() and not self.shift_output_var.get().strip():
-            problem = t("ui.shift.need_output")
+            problem, warn = t("ui.shift.need_output"), False
         bar = self._bars["shift"]
         if not bar.busy:
             bar.button.state(["disabled"] if problem else ["!disabled"])
-            bar.set_hint(problem or ready)
+            bar.set_hint(problem or ready, "warning" if warn else "hint", keep_result=keep_result)
         return problem
 
     def _on_convert_file_changed(self, keep_result: bool = False):
@@ -2661,7 +2683,7 @@ class BISSGui(DragDropMixin):
             elif not video:
                 hint, kind = t("ui.sync.need_video"), "hint"
             elif self._missing.get("ffmpeg"):
-                hint, kind = t("ui.sync.need_ffmpeg") + " " + install_hint("ffmpeg"), "warning"
+                hint, kind = t("ui.sync.need_ffmpeg_short"), "warning"
             else:
                 hint, kind = t("ui.sync.ready_in_place", name=name, video=Path(video).name), "hint"
         bar.set_hint(hint, kind, keep_result=keep_result)
@@ -2852,7 +2874,7 @@ class BISSGui(DragDropMixin):
         self.sync_options_frame = self._section(host, 0, t("ui.convert.sync_section"))
         self.sync_track_combo = self._build_sync_controls(self.sync_options_frame, "convert")
         self._caption(self.sync_options_frame, t("ui.convert.sync_moved")).grid(
-            row=3, column=0, sticky="ew", pady=(PAD_S, 0))
+            row=4, column=0, sticky="ew", pady=(PAD_S, 0))  # row 3 holds the FFmpeg banner
         self.sync_video_var.trace_add('write', lambda *a: self._update_convert_hint())
 
         bar = self._add_action_bar("convert", t("ui.convert.button_encoding"), self._execute_convert,
@@ -3543,6 +3565,13 @@ class BISSGui(DragDropMixin):
     # ======================================================================
     # Utility methods
     # ======================================================================
+
+    def _bar_changed(self, key: str):
+        """A tab's action bar moved on (new hint or result): drop its older status text."""
+        if hasattr(self, "status_var"):  # bars are built before the status bar
+            self._set_status(t('gui.status_ready'), key)
+        else:
+            self._tab_status.pop(key, None)
 
     def _set_status(self, message: str, key: str | None = None):
         """Status bar text for a tab (shown while that tab is open). Full paths are shortened to names."""

@@ -458,6 +458,7 @@
       "load_failed_title": "トラックを読み込めません",
       "need_valid_video": "先に正しい動画ファイルを選んでください。",
       "need_ffmpeg": "動画に合わせるには FFmpeg が必要ですが、見つかりません。",
+      "need_ffmpeg_short": "動画に合わせるには FFmpeg が必要です。上の案内をご覧ください。",
       "need_sub": "直す字幕ファイルを選んでください。",
       "need_video": "合わせる動画ファイルを選んでください。",
       "ready": "準備完了: {name} を {video} に合わせます。",
