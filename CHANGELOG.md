@@ -2,6 +2,20 @@
 
 All notable changes to Bilingual Subtitle Suite are listed here.
 
+## [2.2.2] - 2026-09-24
+
+Build and release changes only; the app itself is unchanged.
+
+### Added
+- GitLab CI pipeline (`.gitlab-ci.yml`) that replaces the GitHub Actions release workflow. It runs on `v*` tags and on manual web/API runs, never on plain pushes.
+  - **test** (Linux, Python 3.11): `python -m unittest discover -s tests` under Xvfb. For a release it also checks that `APP_VERSION` matches the tag and that this file has an entry for the version.
+  - **build-windows-lite / build-windows-full** (Windows runner): build `biss.exe` and `biss-full.exe` with `build.py`, using Python 3.11.9 + Tk and PyInstaller installed from pinned, SHA-256-checked downloads (`ci/tools-windows.ps1`, `ci/requirements-build.txt`). The full build bundles pinned Tesseract data (eng, chi_sim, chi_tra, jpn, kor) and `pgsrip==0.2.1` (`ci/prepare-full-windows.ps1`). `ci/check-exe.ps1` smoke-tests each exe.
+  - **release** (`v*` tags or `RELEASE_VERSION`): uploads both exes to the GitLab Package Registry and creates or updates the GitLab release.
+- README: "Building / Releases (GitLab CI)" section.
+
+### Changed
+- Releases are built and published on GitLab only (GitHub Actions is disabled). The README download links now point to GitLab Releases; older releases stay on GitHub Releases.
+
 ## [2.2.1] - 2026-09-24
 
 Changes since v2.2.0 (commit 84da642).
