@@ -254,6 +254,61 @@ Backups are created automatically when modifying files in-place. The backup mana
 biss cleanup-backups /path/to/directory --older-than 30
 ```
 
+## Building / Releases (GitLab CI)
+
+The GitLab pipeline (`.gitlab-ci.yml`) builds both Windows executables on the
+self-hosted Windows runner and publishes them as a GitLab release. The release
+appears under **Deploy → Releases** of the GitLab project, and the files are
+stored in its **Package Registry** (generic package `biss`, one version per
+release):
+
+| File | What it is |
+|------|------------|
+| `biss.exe` | Lite build (`python build.py --lite`): everything except PGS OCR |
+| `biss-full.exe` | Full build (`python build.py --output-name biss-full`): adds the PGSRip package and Tesseract data for `eng`, `chi_sim`, `chi_tra`, `jpn`, `kor` |
+
+What the pipeline does:
+
+- **test** (Linux container, Python 3.11): `python -m unittest discover -s tests`,
+  with the GUI tests running under Xvfb. For a release, it also checks that
+  `APP_VERSION` in `utils/constants.py` equals the tag's version and that
+  `CHANGELOG.md` has a `## [X.Y.Z]` entry.
+- **build-windows-lite / build-windows-full** (Windows runner): Python 3.11.9
+  with Tk 8.6, installed once on the runner by `ci/tools-windows.ps1` from
+  pinned, SHA-256-checked downloads. The packages come from
+  `ci/requirements-build.txt` (PyInstaller pinned). The full build first runs
+  `ci/prepare-full-windows.ps1`, which lays out `third_party/pgsrip_install/`
+  (tessdata from tesseract-ocr/tessdata tag 4.1.0, SHA-256-pinned;
+  `pgsrip==0.2.1`, hash-pinned; `pgsrip_config.json`). `ci/check-exe.ps1` then
+  runs each exe's `--version` and `--help` and checks a minimum size, and for a
+  release it checks that the exe reports the release's version.
+- **release** (only on `v*` tags or with `RELEASE_VERSION`): uploads both exes
+  to the Package Registry and creates or updates the GitLab release for the tag.
+
+**Cutting a release:** set `APP_VERSION` in `utils/constants.py` to `X.Y.Z`,
+add a `## [X.Y.Z]` section to `CHANGELOG.md`, commit, then push the tag
+`vX.Y.Z` (for example `git tag v2.3.0 && git push origin v2.3.0`). To rebuild
+or re-publish an existing tag, run the pipeline from the web UI (**Build →
+Pipelines → Run pipeline**) **with the tag `vX.Y.Z` as the ref** and the
+variable `RELEASE_VERSION=vX.Y.Z`. The test job refuses a run whose ref is not
+that tag. The release job refuses to publish if the tag points at a different
+commit from the one the pipeline built. A web/API run without
+`RELEASE_VERSION` only tests and builds; the exes can then be downloaded from
+the job artifacts, which are kept for 30 days. The pipeline does not run on
+ordinary pushes or merge requests.
+
+The GitHub Actions workflow (`.github/workflows/release.yml`) is separate and
+unchanged.
+
+**Building locally** (Windows, Python 3.11 with Tk):
+
+```bash
+pip install -r ci/requirements-build.txt
+python build.py --lite                      # dist/biss.exe
+python build.py --output-name biss-full     # dist/biss-full.exe (bundles third_party/pgsrip_install/ if present)
+python -m unittest discover -s tests        # on Linux: xvfb-run -a python -m unittest discover -s tests
+```
+
 ## Troubleshooting
 
 ### Common Issues
