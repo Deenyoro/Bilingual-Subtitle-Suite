@@ -8,7 +8,7 @@ A powerful toolkit for creating bilingual subtitles from video files and standal
 
 ## Download
 
-Download the latest release from [GitHub Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases/latest).
+Download the latest release from the [GitLab Releases](https://gitlab.kawalink.com/dean/Bilingual-Subtitle-Suite/-/releases) page. Releases are now built and published on GitLab only; v2.2.1 and earlier are also on [GitHub Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases).
 
 | File | Description | Approx. Size |
 |------|-------------|--------------|
@@ -47,7 +47,7 @@ Download the latest release from [GitHub Releases](https://github.com/Deenyoro/B
 
 ## Installation from Source
 
-> **Note:** If you downloaded a pre-built exe from the [Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases/latest) page, skip this section. Just run the exe directly — no Python or pip required.
+> **Note:** If you downloaded a pre-built exe from the [Releases](https://gitlab.kawalink.com/dean/Bilingual-Subtitle-Suite/-/releases) page, skip this section. Just run the exe directly — no Python or pip required.
 
 ### Requirements
 - Python 3.8 or higher (3.10+ recommended)
@@ -297,8 +297,24 @@ commit from the one the pipeline built. A web/API run without
 the job artifacts, which are kept for 30 days. The pipeline does not run on
 ordinary pushes or merge requests.
 
-The GitHub Actions workflow (`.github/workflows/release.yml`) is separate and
-unchanged.
+GitHub Actions is disabled for this project: releases are built and published
+on GitLab only. `.github/workflows/release.yml` is kept for reference and does
+not run.
+
+**Artifact size limit:** `biss-full.exe` is about 110 MB, which is more than
+GitLab's default 100 MB maximum artifact size. Before the first run, an admin
+must set **Maximum artifacts size** to at least 150 MB (Admin → Settings →
+CI/CD for the instance, or the project's CI/CD settings). Otherwise
+`build-windows-full` fails to upload its artifact (HTTP 413) and the release
+job cannot run.
+
+**Difference from the GitHub build:** the GitHub workflow pip-installed
+`pgsrip` and its dependencies into the build environment, so PyInstaller saw
+them during analysis. Here `pgsrip` is only unpacked into
+`third_party/pgsrip_install/` (without dependencies), and `build.py` bundles
+that folder as data, as before. The frozen module graph, and so the size of
+`biss-full.exe`, can differ slightly. Runtime behaviour is the same, because
+`pgsrip` imports `numpy`, which `build.py` excludes in both builds.
 
 **Building locally** (Windows, Python 3.11 with Tk):
 

@@ -8,7 +8,7 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases/latest) 下载最新版本。
+从 [GitLab Releases](https://gitlab.kawalink.com/dean/Bilingual-Subtitle-Suite/-/releases) 下载最新版本。新版本现在只在 GitLab 上构建和发布；v2.2.1 及更早的版本也可在 [GitHub Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases) 获取。
 
 | 文件 | 说明 | 大小 |
 |------|------|------|
@@ -57,7 +57,7 @@ biss --lang ko          # 한국어 인터페이스biss --lang en          # Eng
 
 ## 从源码安装
 
-> **注意：** 如果您从 [Releases](https://github.com/Deenyoro/Bilingual-Subtitle-Suite/releases/latest) 页面下载了预编译的 exe 文件，请跳过此部分。直接运行 exe 即可，无需安装 Python。
+> **注意：** 如果您从 [Releases](https://gitlab.kawalink.com/dean/Bilingual-Subtitle-Suite/-/releases) 页面下载了预编译的 exe 文件，请跳过此部分。直接运行 exe 即可，无需安装 Python。
 
 ### 系统要求
 - Python 3.8 或更高版本（推荐 3.10+）

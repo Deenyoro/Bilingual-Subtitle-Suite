@@ -12,8 +12,13 @@
 # + Tk the first time under the runner's tools directory (ci/tools-windows.ps1),
 # so nothing has to be pre-installed.
 #
-# The GitHub Actions workflow (.github/workflows/release.yml) is separate
-# and unchanged.
+# GitHub Actions is disabled for this project; releases are built and
+# published here only. .github/workflows/release.yml is kept for reference.
+#
+# biss-full.exe is about 110 MB, larger than GitLab's default 100 MB
+# maximum artifact size. The instance or project "Maximum artifacts size"
+# (Admin > Settings > CI/CD, or the project's CI/CD settings) must be at
+# least 150 MB, or build-windows-full fails to upload its artifact (HTTP 413).
 
 stages: [test, build, release]
 
@@ -60,7 +65,8 @@ variables:
 
 # The unit tests (python -m unittest discover -s tests) on Python 3.11, the
 # version the exes are built with. The GUI tests need a display, so they run
-# under Xvfb (they would be skipped without one).
+# under Xvfb (they would be skipped without one); libxcursor1 lets the tkdnd
+# drag-and-drop smoke test load instead of skipping.
 test:
   extends: .linux
   stage: test
@@ -88,9 +94,10 @@ test:
         0.0.0-*) echo "untagged build; skipping version check" ;;
         *) APP_VERSION=$(python -c "from utils.constants import APP_VERSION; print(APP_VERSION)")
            [ "$APP_VERSION" = "$VERSION" ] || { echo "APP_VERSION in utils/constants.py is $APP_VERSION but this release is $VERSION: bump it first"; exit 1; }
-           grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "CHANGELOG.md has no '## [$VERSION]' entry"; exit 1; } ;;
+           # Fixed-string match at the start of a line (dots are not wildcards).
+           awk -v h="## [$VERSION]" 'index($0, h) == 1 { found = 1 } END { exit !found }' CHANGELOG.md || { echo "CHANGELOG.md has no '## [$VERSION]' entry"; exit 1; } ;;
       esac
-    - apt-get update -qq && apt-get install -y -qq xvfb xauth >/dev/null
+    - apt-get update -qq && apt-get install -y -qq xvfb xauth libxcursor1 >/dev/null
     - python -c "import tkinter; print('Tk', tkinter.TkVersion)"
     - pip install -q -r ci/requirements-build.txt
     - xvfb-run -a python -m unittest discover -s tests
