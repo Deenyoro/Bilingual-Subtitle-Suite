@@ -234,6 +234,10 @@ build/
 dist/
 *.spec.bak
 
+# GitLab CI scratch (Windows build jobs, see ci/)
+.venv-ci/
+.ci-pgsrip/
+
 # Development and Reference Files
 originalscript.py
 

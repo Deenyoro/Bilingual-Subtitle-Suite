@@ -1,0 +1,7 @@
+# The PGSRip package copied into the full build (third_party/pgsrip_install/
+# pgsrip, see ci/prepare-full-windows.ps1). Installed with --no-deps into a
+# staging folder only: build.py bundles the package folder as data, not its
+# dependencies, so they are not needed at build time. Hash-pinned.
+pgsrip==0.2.1 \
+    --hash=sha256:ccd646efa68a52ea9fc6f1132e2f5e61a5244473b1f68869b57de6420971f40b \
+    --hash=sha256:f3523ae9837a03b2d6969d7823c3d7a0b16dbaee7f0237d12db50c351e4b685c

@@ -1,0 +1,221 @@
+# GitLab CI for Bilingual Subtitle Suite (biss).
+#
+# Port of .github/workflows/release.yml to the self-hosted GitLab runners:
+#   linux    -> Kubernetes executor on the cluster (unit tests, release)
+#   windows  -> shell runner on the Windows laptop (biss.exe lite build and
+#               biss-full.exe with bundled PGSRip + Tesseract data)
+#
+# Runs on version tags and when started from the web UI / API (never on
+# plain pushes, so the laptop runner is not woken for every commit). Set
+# RELEASE_VERSION=v1.2.3 on a manual run of that tag to publish (or
+# re-publish) its release. The Windows jobs bootstrap their own Python 3.11
+# + Tk the first time under the runner's tools directory (ci/tools-windows.ps1),
+# so nothing has to be pre-installed.
+#
+# The GitHub Actions workflow (.github/workflows/release.yml) is separate
+# and unchanged.
+
+stages: [test, build, release]
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "api"
+
+variables:
+  GIT_DEPTH: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_ROOT_USER_ACTION: ignore
+
+# ───────────────────────────── shared pieces ─────────────────────────────
+
+.version: &version
+  # v1.2.3 -> 1.2.3; untagged runs get a valid semver prerelease.
+  - |
+    if [ -n "$RELEASE_VERSION" ]; then VERSION="${RELEASE_VERSION#v}"; elif [ -n "$CI_COMMIT_TAG" ]; then VERSION="${CI_COMMIT_TAG#v}"; else VERSION="0.0.0-${CI_COMMIT_SHORT_SHA}"; fi
+    echo "App version: $VERSION"
+
+.version_ps: &version_ps
+  - |
+    if ($env:RELEASE_VERSION) { $env:VERSION = $env:RELEASE_VERSION -replace '^v','' } elseif ($env:CI_COMMIT_TAG) { $env:VERSION = $env:CI_COMMIT_TAG -replace '^v','' } else { $env:VERSION = "0.0.0-$env:CI_COMMIT_SHORT_SHA" }
+    Write-Host "App version: $env:VERSION"
+
+.linux:
+  tags: [linux]
+  interruptible: true
+
+.windows:
+  tags: [windows]
+  interruptible: true
+  variables:
+    GIT_STRATEGY: fetch
+  before_script:
+    - . .\ci\tools-windows.ps1
+    - *version_ps
+    - python -m venv .venv-ci
+    - .\.venv-ci\Scripts\python.exe -m pip install -q -r ci\requirements-build.txt
+
+# ───────────────────────────── tests (gate) ─────────────────────────────
+
+# The unit tests (python -m unittest discover -s tests) on Python 3.11, the
+# version the exes are built with. The GUI tests need a display, so they run
+# under Xvfb (they would be skipped without one).
+test:
+  extends: .linux
+  stage: test
+  image: python:3.11
+  variables:
+    DEBIAN_FRONTEND: noninteractive
+    PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+  cache:
+    key: pip-py311
+    paths: [.cache/pip/]
+  script:
+    - *version
+    # A manual RELEASE_VERSION run must be started on that tag; refuse here,
+    # before the Windows laptop spends two builds on the wrong ref (the
+    # release job re-checks the tag's commit before publishing).
+    - |
+      if [ -n "$RELEASE_VERSION" ] && [ "$CI_COMMIT_TAG" != "v${RELEASE_VERSION#v}" ]; then
+        echo "RELEASE_VERSION=$RELEASE_VERSION but this pipeline runs on '${CI_COMMIT_TAG:-$CI_COMMIT_REF_NAME}'. Run it on the tag v${RELEASE_VERSION#v}."; exit 1
+      fi
+    # Release builds must carry the release's version inside the app
+    # (biss --version, GUI title, interactive menu read APP_VERSION) and have
+    # a CHANGELOG entry. Untagged 0.0.0-<sha> builds are not checked.
+    - |
+      case "$VERSION" in
+        0.0.0-*) echo "untagged build; skipping version check" ;;
+        *) APP_VERSION=$(python -c "from utils.constants import APP_VERSION; print(APP_VERSION)")
+           [ "$APP_VERSION" = "$VERSION" ] || { echo "APP_VERSION in utils/constants.py is $APP_VERSION but this release is $VERSION: bump it first"; exit 1; }
+           grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "CHANGELOG.md has no '## [$VERSION]' entry"; exit 1; } ;;
+      esac
+    - apt-get update -qq && apt-get install -y -qq xvfb xauth >/dev/null
+    - python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+    - pip install -q -r ci/requirements-build.txt
+    - xvfb-run -a python -m unittest discover -s tests
+
+# ───────────────────────────── Windows ─────────────────────────────
+
+# Lite build (dist\biss.exe): everything except PGS OCR. Same command as the
+# GitHub workflow's build-lite job.
+build-windows-lite:
+  extends: .windows
+  stage: build
+  needs: [test]
+  script:
+    - .\.venv-ci\Scripts\python.exe build.py --lite
+    - .\ci\check-exe.ps1 -Exe dist\biss.exe -MinMB 10 -Version $env:VERSION
+    - |
+      New-Item -ItemType Directory -Force out | Out-Null
+      Copy-Item dist\biss.exe out\ -Force
+      Get-ChildItem out
+  artifacts:
+    name: biss-lite-$CI_COMMIT_SHORT_SHA
+    paths: [out/biss.exe]
+    expire_in: 30 days
+
+# Full build (dist\biss-full.exe): adds PGSRip and the eng, chi_sim, chi_tra,
+# jpn and kor Tesseract data (pinned, SHA-256 checked, cached on the runner).
+# Same command as the GitHub workflow's build-full job.
+build-windows-full:
+  extends: .windows
+  stage: build
+  needs: [test]
+  script:
+    - .\ci\prepare-full-windows.ps1 -Python .\.venv-ci\Scripts\python.exe
+    - .\.venv-ci\Scripts\python.exe build.py --output-name biss-full
+    - .\ci\check-exe.ps1 -Exe dist\biss-full.exe -MinMB 80 -Version $env:VERSION
+    - |
+      New-Item -ItemType Directory -Force out | Out-Null
+      Copy-Item dist\biss-full.exe out\ -Force
+      Get-ChildItem out
+  artifacts:
+    name: biss-full-$CI_COMMIT_SHORT_SHA
+    paths: [out/biss-full.exe]
+    expire_in: 30 days
+
+# ───────────────────────────── release ─────────────────────────────
+
+# Uploads both exes to the project's generic package registry and creates
+# (or updates) the GitLab release for the version's tag with links to them.
+release:
+  extends: .linux
+  stage: release
+  image: alpine:3.20
+  needs:
+    - build-windows-lite
+    - build-windows-full
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+    - if: $RELEASE_VERSION
+  # Never auto-cancel a half-finished publish.
+  interruptible: false
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - apk add --no-cache curl jq >/dev/null
+    - |
+      set -e
+      VERSION="${RELEASE_VERSION:-$CI_COMMIT_TAG}"; VERSION="${VERSION#v}"; TAG="v$VERSION"
+      API="$CI_API_V4_URL/projects/$CI_PROJECT_ID"; H="JOB-TOKEN: $CI_JOB_TOKEN"
+      PKG="$API/packages/generic/biss/$VERSION"
+      TAG_JSON=$(curl -fsS -H "$H" "$API/repository/tags/$TAG") || { echo "Tag $TAG does not exist in this project"; exit 1; }
+      # A manual RELEASE_VERSION run must be started on the tag itself, or it
+      # would publish some other commit's builds under this tag.
+      TAG_SHA=$(printf '%s' "$TAG_JSON" | jq -r '.commit.id')
+      [ "$TAG_SHA" = "$CI_COMMIT_SHA" ] || { echo "Tag $TAG points at $TAG_SHA but this pipeline built $CI_COMMIT_SHA. Run the pipeline on the tag ref $TAG."; exit 1; }
+      ls -la out/
+      for f in out/biss.exe out/biss-full.exe; do
+        test -f "$f" || { echo "missing build: $f"; exit 1; }
+      done
+      : > links.ndjson
+      for f in out/biss.exe out/biss-full.exe; do
+        name=$(basename "$f")
+        echo "uploading $name ($(du -h "$f" | cut -f1))"
+        curl -fsS -H "$H" --upload-file "$f" "$PKG/$name" >/dev/null
+        # Link the API download URL (what the release mirror accepts), not the web one.
+        jq -cn --arg n "$name" --arg u "$PKG/$name" '{name:$n, url:$u, link_type:"package"}' >> links.ndjson
+      done
+      ASSETS=$(jq -s -c . links.ndjson)
+      NOTES=$(cat <<EOF
+      ## Bilingual Subtitle Suite $TAG
+
+      ### Downloads
+
+      | File | Description | Approx. Size |
+      |------|-------------|--------------|
+      | **\`biss.exe\`** | Lite build — all features except PGS OCR | ~20 MB |
+      | **\`biss-full.exe\`** | Full build — includes PGS OCR with bundled Tesseract data | ~110 MB |
+
+      > **Which one should I download?**
+      > Most users should start with **\`biss.exe\`** (lite). It handles subtitle merging, alignment, encoding conversion, batch processing, and the full GUI/CLI — everything except PGS image-based subtitle OCR. Download **\`biss-full.exe\`** only if you need to convert PGS (Blu-ray) subtitles to text.
+
+      ### Bundled Tessdata (full build only)
+      \`eng\`, \`chi_sim\`, \`chi_tra\`, \`jpn\`, \`kor\`
+
+      ### Usage
+      - **GUI**: Double-click the exe
+      - **CLI**: \`biss.exe merge movie.mkv --output subs.srt\`
+      - **Help**: \`biss.exe --help\`
+
+      ### Requirements
+      - Windows 10 or later
+      - [FFmpeg](https://ffmpeg.org/download.html) on PATH (for video processing)
+      - [MKVToolNix](https://mkvtoolnix.download/) on PATH (for MKV operations)
+      - [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) on PATH (**lite build only**, for PGS subtitle conversion)
+
+      Built on GitLab CI.
+      EOF
+      )
+      BODY=$(jq -cn --arg tag "$TAG" --arg name "Bilingual Subtitle Suite $TAG" --arg desc "$NOTES" --argjson links "$ASSETS" '{tag_name:$tag, name:$name, description:$desc, assets:{links:$links}}')
+      if curl -fsS -o /dev/null -H "$H" "$API/releases/$TAG" 2>/dev/null; then
+        curl -fsS -H "$H" "$API/releases/$TAG/assets/links" | jq -r '.[].id' | while read -r id; do
+          curl -fsS -X DELETE -H "$H" "$API/releases/$TAG/assets/links/$id" >/dev/null
+        done
+        curl -fsS -X PUT -H "$H" -H "Content-Type: application/json" "$API/releases/$TAG" -d "$BODY" | jq -r '"updated release " + .tag_name'
+        while read -r l; do curl -fsS -X POST -H "$H" -H "Content-Type: application/json" "$API/releases/$TAG/assets/links" -d "$l" >/dev/null; done < links.ndjson
+      else
+        curl -fsS -X POST -H "$H" -H "Content-Type: application/json" "$API/releases" -d "$BODY" | jq -r '"created release " + .tag_name'
+      fi
+      echo "Published $TAG with:"; jq -r '.name' links.ndjson | sed 's/^/  /'

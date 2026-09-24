@@ -1,0 +1,12 @@
+# Packages the release exes are built with (GitLab CI: Linux test job and
+# both Windows build jobs). Same set the GitHub Actions release workflow
+# installs; PyInstaller is pinned exactly so a tag rebuilds the same way.
+# tkinterdnd2 is pinned in requirements.txt too: the build bundles its
+# native tkdnd library.
+pyinstaller==6.22.3
+requests
+pysrt
+charset-normalizer
+Pillow
+python-dotenv
+tkinterdnd2==0.6.3
