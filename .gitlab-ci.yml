@@ -15,10 +15,13 @@
 # GitHub Actions is disabled for this project; releases are built and
 # published here only. .github/workflows/release.yml is kept for reference.
 #
-# biss-full.exe is about 110 MB, larger than GitLab's default 100 MB
-# maximum artifact size. The instance or project "Maximum artifacts size"
-# (Admin > Settings > CI/CD, or the project's CI/CD settings) must be at
-# least 150 MB, or build-windows-full fails to upload its artifact (HTTP 413).
+# Artifact size: biss-full.exe (about 100-110 MB, most of it Tesseract
+# data) is over GitLab's default 100 MB maximum job artifact size, which
+# this instance does not raise, so it is never a job artifact. On release
+# runs build-windows-full uploads it straight to the Generic Package
+# Registry (ci/publish-windows.ps1) and the release job links it; untagged
+# runs build and check it but do not keep it. biss.exe (about 20 MB) is a
+# normal job artifact, and the release job uploads it.
 
 stages: [test, build, release]
 
@@ -81,7 +84,7 @@ test:
     - *version
     # A manual RELEASE_VERSION run must be started on that tag; refuse here,
     # before the Windows laptop spends two builds on the wrong ref (the
-    # release job re-checks the tag's commit before publishing).
+    # jobs that publish re-check the tag before uploading).
     - |
       if [ -n "$RELEASE_VERSION" ] && [ "$CI_COMMIT_TAG" != "v${RELEASE_VERSION#v}" ]; then
         echo "RELEASE_VERSION=$RELEASE_VERSION but this pipeline runs on '${CI_COMMIT_TAG:-$CI_COMMIT_REF_NAME}'. Run it on the tag v${RELEASE_VERSION#v}."; exit 1
@@ -124,28 +127,36 @@ build-windows-lite:
 
 # Full build (dist\biss-full.exe): adds PGSRip and the eng, chi_sim, chi_tra,
 # jpn and kor Tesseract data (pinned, SHA-256 checked, cached on the runner).
-# Same command as the GitHub workflow's build-full job.
+# Same command as the GitHub workflow's build-full job. On release runs it
+# publishes the exe itself (see the header).
 build-windows-full:
   extends: .windows
   stage: build
   needs: [test]
+  # Not interruptible: release runs upload to the package registry from
+  # this job, and a cancel mid-upload would leave a partial release.
+  interruptible: false
   script:
     - .\ci\prepare-full-windows.ps1 -Python .\.venv-ci\Scripts\python.exe
     - .\.venv-ci\Scripts\python.exe build.py --output-name biss-full
     - .\ci\check-exe.ps1 -Exe dist\biss-full.exe -MinMB 80 -Version $env:VERSION
     - |
-      New-Item -ItemType Directory -Force out | Out-Null
-      Copy-Item dist\biss-full.exe out\ -Force
-      Get-ChildItem out
+      if ($env:CI_COMMIT_TAG -match '^v' -or $env:RELEASE_VERSION) {
+        .\ci\publish-windows.ps1 -File dist\biss-full.exe
+      } else {
+        Write-Host "Not a release run: biss-full.exe was built and checked but is not kept (over the 100 MB job artifact limit)."
+      }
   artifacts:
     name: biss-full-$CI_COMMIT_SHORT_SHA
-    paths: [out/biss-full.exe]
+    # Only the release link; the exe itself is left out (see the header).
+    paths: [out/links.ndjson]
     expire_in: 30 days
 
 # ───────────────────────────── release ─────────────────────────────
 
-# Uploads both exes to the project's generic package registry and creates
-# (or updates) the GitLab release for the version's tag with links to them.
+# Uploads biss.exe to the project's generic package registry (next to the
+# biss-full.exe that build-windows-full published) and creates (or updates)
+# the GitLab release for the version's tag with links to both.
 release:
   extends: .linux
   stage: release
@@ -165,25 +176,27 @@ release:
     - |
       set -e
       VERSION="${RELEASE_VERSION:-$CI_COMMIT_TAG}"; VERSION="${VERSION#v}"; TAG="v$VERSION"
+      # A manual RELEASE_VERSION run must be started on the tag itself, or it
+      # would publish some other commit's builds under this tag. On a tag
+      # pipeline CI_COMMIT_SHA is the tag's commit.
+      [ "$CI_COMMIT_TAG" = "$TAG" ] || { echo "This pipeline runs on '${CI_COMMIT_TAG:-$CI_COMMIT_REF_NAME}', not the tag $TAG. Run it on the tag ref $TAG."; exit 1; }
       API="$CI_API_V4_URL/projects/$CI_PROJECT_ID"; H="JOB-TOKEN: $CI_JOB_TOKEN"
       PKG="$API/packages/generic/biss/$VERSION"
-      TAG_JSON=$(curl -fsS -H "$H" "$API/repository/tags/$TAG") || { echo "Tag $TAG does not exist in this project"; exit 1; }
-      # A manual RELEASE_VERSION run must be started on the tag itself, or it
-      # would publish some other commit's builds under this tag.
-      TAG_SHA=$(printf '%s' "$TAG_JSON" | jq -r '.commit.id')
-      [ "$TAG_SHA" = "$CI_COMMIT_SHA" ] || { echo "Tag $TAG points at $TAG_SHA but this pipeline built $CI_COMMIT_SHA. Run the pipeline on the tag ref $TAG."; exit 1; }
       ls -la out/
-      for f in out/biss.exe out/biss-full.exe; do
-        test -f "$f" || { echo "missing build: $f"; exit 1; }
-      done
-      : > links.ndjson
-      for f in out/biss.exe out/biss-full.exe; do
-        name=$(basename "$f")
-        echo "uploading $name ($(du -h "$f" | cut -f1))"
-        curl -fsS -H "$H" --upload-file "$f" "$PKG/$name" >/dev/null
-        # Link the API download URL (what the release mirror accepts), not the web one.
-        jq -cn --arg n "$name" --arg u "$PKG/$name" '{name:$n, url:$u, link_type:"package"}' >> links.ndjson
-      done
+      test -f out/biss.exe || { echo "missing build: out/biss.exe"; exit 1; }
+      test -s out/links.ndjson || { echo "build-windows-full did not publish biss-full.exe (out/links.ndjson missing)"; exit 1; }
+      # Builds are not reproducible: never add a second, different biss.exe
+      # under the same name (see ci/publish-windows.ps1).
+      code=$(curl -sS -I -o /dev/null -w '%{http_code}' -H "$H" "$PKG/biss.exe" || true)
+      case "$code" in
+        200) echo "biss.exe is already in package biss/$VERSION. Publishing it again would add a second file with a different SHA-256 under the same name. Release a new patch version instead."; exit 1 ;;
+        404) ;;
+        *) echo "warning: could not check whether biss.exe is already published (HTTP '$code'); uploading." ;;
+      esac
+      echo "uploading biss.exe ($(du -h out/biss.exe | cut -f1))"
+      curl -fsS --retry 3 -H "$H" --upload-file out/biss.exe "$PKG/biss.exe" >/dev/null
+      # Link the API download URL (what the release mirror accepts), not the web one.
+      { jq -cn --arg n biss.exe --arg u "$PKG/biss.exe" '{name:$n, url:$u, link_type:"package"}'; cat out/links.ndjson; } > links.ndjson
       ASSETS=$(jq -s -c . links.ndjson)
       NOTES=$(cat <<EOF
       ## Bilingual Subtitle Suite $TAG
@@ -215,14 +228,25 @@ release:
       Built on GitLab CI.
       EOF
       )
-      BODY=$(jq -cn --arg tag "$TAG" --arg name "Bilingual Subtitle Suite $TAG" --arg desc "$NOTES" --argjson links "$ASSETS" '{tag_name:$tag, name:$name, description:$desc, assets:{links:$links}}')
       if curl -fsS -o /dev/null -H "$H" "$API/releases/$TAG" 2>/dev/null; then
-        curl -fsS -H "$H" "$API/releases/$TAG/assets/links" | jq -r '.[].id' | while read -r id; do
-          curl -fsS -X DELETE -H "$H" "$API/releases/$TAG/assets/links/$id" >/dev/null
-        done
+        # Update in place: nothing is deleted. Existing links with the same
+        # name are pointed at the new URL, new names are added.
+        BODY=$(jq -cn --arg name "Bilingual Subtitle Suite $TAG" --arg desc "$NOTES" '{name:$name, description:$desc}')
         curl -fsS -X PUT -H "$H" -H "Content-Type: application/json" "$API/releases/$TAG" -d "$BODY" | jq -r '"updated release " + .tag_name'
-        while read -r l; do curl -fsS -X POST -H "$H" -H "Content-Type: application/json" "$API/releases/$TAG/assets/links" -d "$l" >/dev/null; done < links.ndjson
+        EXISTING=$(curl -fsS -H "$H" "$API/releases/$TAG/assets/links")
+        while read -r l; do
+          name=$(printf '%s' "$l" | jq -r '.name')
+          id=$(printf '%s' "$EXISTING" | jq -r --arg n "$name" 'map(select(.name == $n)) | .[0].id // empty')
+          if [ -n "$id" ]; then
+            curl -fsS -X PUT -H "$H" -H "Content-Type: application/json" "$API/releases/$TAG/assets/links/$id" -d "$l" >/dev/null
+            echo "  updated link $name"
+          else
+            curl -fsS -X POST -H "$H" -H "Content-Type: application/json" "$API/releases/$TAG/assets/links" -d "$l" >/dev/null
+            echo "  added link $name"
+          fi
+        done < links.ndjson
       else
+        BODY=$(jq -cn --arg tag "$TAG" --arg name "Bilingual Subtitle Suite $TAG" --arg desc "$NOTES" --argjson links "$ASSETS" '{tag_name:$tag, name:$name, description:$desc, assets:{links:$links}}')
         curl -fsS -X POST -H "$H" -H "Content-Type: application/json" "$API/releases" -d "$BODY" | jq -r '"created release " + .tag_name'
       fi
       echo "Published $TAG with:"; jq -r '.name' links.ndjson | sed 's/^/  /'

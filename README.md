@@ -282,31 +282,37 @@ What the pipeline does:
   `pgsrip==0.2.1`, hash-pinned; `pgsrip_config.json`). `ci/check-exe.ps1` then
   runs each exe's `--version` and `--help` and checks a minimum size, and for a
   release it checks that the exe reports the release's version.
-- **release** (only on `v*` tags or with `RELEASE_VERSION`): uploads both exes
-  to the Package Registry and creates or updates the GitLab release for the tag.
+- **Publishing** (only on `v*` tags or with `RELEASE_VERSION`):
+  `build-windows-full` uploads `biss-full.exe` straight to the Package Registry
+  (`ci/publish-windows.ps1`). The **release** job then uploads `biss.exe` and
+  creates or updates the GitLab release for the tag with links to both. Before
+  uploading, each step checks that the file is not already in that package
+  version and refuses if it is. The builds are not reproducible, so a second
+  upload would add a different file under the same name.
 
 **Cutting a release:** set `APP_VERSION` in `utils/constants.py` to `X.Y.Z`,
 add a `## [X.Y.Z]` section to `CHANGELOG.md`, commit, then push the tag
-`vX.Y.Z` (for example `git tag v2.3.0 && git push origin v2.3.0`). To rebuild
-or re-publish an existing tag, run the pipeline from the web UI (**Build →
-Pipelines → Run pipeline**) **with the tag `vX.Y.Z` as the ref** and the
-variable `RELEASE_VERSION=vX.Y.Z`. The test job refuses a run whose ref is not
-that tag. The release job refuses to publish if the tag points at a different
-commit from the one the pipeline built. A web/API run without
-`RELEASE_VERSION` only tests and builds; the exes can then be downloaded from
-the job artifacts, which are kept for 30 days. The pipeline does not run on
-ordinary pushes or merge requests.
+`vX.Y.Z` (for example `git tag v2.3.0 && git push origin v2.3.0`). If a tag's
+first pipeline failed before anything was uploaded, publish it by running the
+pipeline from the web UI (**Build → Pipelines → Run pipeline**) **with the tag
+`vX.Y.Z` as the ref** and the variable `RELEASE_VERSION=vX.Y.Z`. Once a file
+of that version has been uploaded, a re-run refuses; release a new patch
+version instead. The test job, `build-windows-full` and the release job all
+refuse a `RELEASE_VERSION` run whose ref is not that tag. A web/API run
+without `RELEASE_VERSION` only tests and builds: `biss.exe` can then be
+downloaded from the `build-windows-lite` job artifacts (kept for 30 days),
+while `biss-full.exe` is built and checked but not kept. The pipeline does not
+run on ordinary pushes or merge requests.
 
 GitHub Actions is disabled for this project: releases are built and published
 on GitLab only. `.github/workflows/release.yml` is kept for reference and does
 not run.
 
-**Artifact size limit:** `biss-full.exe` is about 110 MB, which is more than
-GitLab's default 100 MB maximum artifact size. Before the first run, an admin
-must set **Maximum artifacts size** to at least 150 MB (Admin → Settings →
-CI/CD for the instance, or the project's CI/CD settings). Otherwise
-`build-windows-full` fails to upload its artifact (HTTP 413) and the release
-job cannot run.
+**Artifact size:** `biss-full.exe` is roughly 100-110 MB (about 77 MB of it is
+Tesseract data), more than GitLab's default 100 MB maximum job artifact size.
+That is why it is never a job artifact and goes straight to the Package
+Registry, which has no such limit on this instance. No admin setting is
+needed.
 
 **Difference from the GitHub build:** the GitHub workflow pip-installed
 `pgsrip` and its dependencies into the build environment, so PyInstaller saw

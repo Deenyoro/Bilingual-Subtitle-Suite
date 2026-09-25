@@ -1,6 +1,8 @@
 # Packages the release exes are built with (GitLab CI: Linux test job and
 # both Windows build jobs). Same set the GitHub Actions release workflow
-# installs; PyInstaller is pinned exactly so a tag rebuilds the same way.
+# installs. PyInstaller is pinned exactly so the freezer itself does not
+# change between builds; the other packages are unpinned, as they were on
+# GitHub, so a rebuild of a tag can still pick up newer versions of them.
 # tkinterdnd2 is pinned in requirements.txt too: the build bundles its
 # native tkdnd library.
 pyinstaller==6.22.3
