@@ -2,6 +2,11 @@
 
 All notable changes to Bilingual Subtitle Suite are listed here.
 
+## [2.2.3] - 2026-09-25
+
+### Changed
+- CI: pipelines run on merge requests (tests/Linux builds; Windows/macOS manual; nothing published).
+
 ## [2.2.2] - 2026-09-24
 
 Build and release changes only; the app itself is unchanged.

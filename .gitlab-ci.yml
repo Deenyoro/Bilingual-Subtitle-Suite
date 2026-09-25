@@ -5,8 +5,11 @@
 #   windows  -> shell runner on the Windows laptop (biss.exe lite build and
 #               biss-full.exe with bundled PGSRip + Tesseract data)
 #
-# Runs on version tags and when started from the web UI / API (never on
-# plain pushes, so the laptop runner is not woken for every commit). Set
+# Runs on version tags, when started from the web UI / API, and on merge
+# requests (e.g. Renovate). Never on plain pushes, so the laptop runner is not
+# woken for every commit. Merge request pipelines run the Linux tests; the
+# Windows builds are manual there (allow_failure) and nothing is published
+# (publishing needs a v* tag or RELEASE_VERSION). Set
 # RELEASE_VERSION=v1.2.3 on a manual run of that tag to publish (or
 # re-publish) its release. The Windows jobs bootstrap their own Python 3.11
 # + Tk the first time under the runner's tools directory (ci/tools-windows.ps1),
@@ -30,6 +33,8 @@ workflow:
     - if: $CI_COMMIT_TAG =~ /^v/
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_PIPELINE_SOURCE == "api"
+    # Merge requests (Renovate): Linux tests; Windows manual; no release.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
 variables:
   GIT_DEPTH: "1"
@@ -113,6 +118,12 @@ build-windows-lite:
   extends: .windows
   stage: build
   needs: [test]
+  rules:
+    # Manual on merge requests so Renovate MRs never queue laptop builds.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: true
+    - when: on_success
   script:
     - .\.venv-ci\Scripts\python.exe build.py --lite
     - .\ci\check-exe.ps1 -Exe dist\biss.exe -MinMB 10 -Version $env:VERSION
@@ -133,6 +144,12 @@ build-windows-full:
   extends: .windows
   stage: build
   needs: [test]
+  rules:
+    # Manual on merge requests so Renovate MRs never queue laptop builds.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: true
+    - when: on_success
   # Not interruptible: release runs upload to the package registry from
   # this job, and a cancel mid-upload would leave a partial release.
   interruptible: false
