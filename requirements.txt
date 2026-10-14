@@ -16,7 +16,7 @@
 
 # Required dependencies for core functionality
 python-dotenv>=0.19.0      # Environment file support for secure API key management
-requests>=2.25.0           # HTTP requests for translation API
+requests>=2.32.4           # HTTP requests for translation API (2.32.4 fixes CVE-2023-32681, CVE-2024-35195, CVE-2024-47081)
 pysrt>=1.1.0              # SRT subtitle file parsing
 
 # Optional dependencies for enhanced functionality
