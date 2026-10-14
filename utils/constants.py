@@ -140,7 +140,7 @@ DEFAULT_LOG_DATE_FORMAT: str = '%Y-%m-%d %H:%M:%S'
 
 # Application metadata
 APP_NAME: str = "Bilingual Subtitle Suite"
-APP_VERSION: str = "2.2.3"
+APP_VERSION: str = "2.2.4"
 APP_DESCRIPTION: str = """
 A comprehensive tool for processing subtitle files with support for:
 - Bilingual subtitle merging (Chinese-English, Japanese-English, Korean-English, etc.)

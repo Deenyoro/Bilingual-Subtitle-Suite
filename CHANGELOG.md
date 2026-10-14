@@ -2,6 +2,12 @@
 
 All notable changes to Bilingual Subtitle Suite are listed here.
 
+## [2.2.4] - 2026-10-14
+
+### Fixed
+- `requests` minimum raised to 2.32.4 (CVE-2023-32681, CVE-2024-35195, CVE-2024-47081).
+- CI: the release workflow passed the tag input into a shell step by interpolation; it now goes through an environment variable.
+
 ## [2.2.3] - 2026-09-25
 
 ### Changed
