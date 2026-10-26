@@ -11,4 +11,4 @@ pysrt
 charset-normalizer
 Pillow
 python-dotenv
-tkinterdnd2==0.6.3
+tkinterdnd2==0.7.0

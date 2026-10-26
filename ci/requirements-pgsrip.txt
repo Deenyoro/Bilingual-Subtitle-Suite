@@ -2,6 +2,6 @@
 # pgsrip, see ci/prepare-full-windows.ps1). Installed with --no-deps into a
 # staging folder only: build.py bundles the package folder as data, not its
 # dependencies, so they are not needed at build time. Hash-pinned.
-pgsrip==0.2.1 \
-    --hash=sha256:ccd646efa68a52ea9fc6f1132e2f5e61a5244473b1f68869b57de6420971f40b \
-    --hash=sha256:f3523ae9837a03b2d6969d7823c3d7a0b16dbaee7f0237d12db50c351e4b685c
+pgsrip==0.3.0 \
+    --hash=sha256:1e6aa8411fce36dc695521f969d1d01ba9682474eddb2a007a3888a6b1492d28 \
+    --hash=sha256:78181de4feb7843c7e98d47fd1cd7e9a2bdcbfd53ba3f6302f19089a6ec208c7
