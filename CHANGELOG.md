@@ -2,6 +2,13 @@
 
 All notable changes to Bilingual Subtitle Suite are listed here.
 
+## [2.2.5] - 2026-10-28
+
+### Fixed
+- Extract: the track language read from a video file is used in the output file names; a language tag containing `/`, `..` or other unexpected characters is now ignored, so a crafted file cannot make extraction write outside the chosen folder.
+- Timing adjust backups: keeping the backup limit no longer removes backups that belong to other files with the same base name (for example `Movie.en.srt.bak` when adjusting `Movie.srt`). File names with `[` `]` are handled too.
+- Translation: the supported-languages lookup no longer puts the Google API key in the request URL, where it could show up in error messages and logs.
+
 ## [2.2.4] - 2026-10-14
 
 ### Fixed
