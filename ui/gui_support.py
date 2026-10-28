@@ -383,11 +383,11 @@ def parse_mkvinfo_tracks(output: str) -> list[dict[str, Any]]:
             elif 'subtitle' in low:
                 current['type'] = 'subtitles'
         if 'Language (IETF BCP 47):' in line:
-            m = re.search(r'Language \(IETF BCP 47\): (\S+)', line)
+            m = re.search(r'Language \(IETF BCP 47\): ([A-Za-z0-9-]+)\s*$', line)
             if m:
                 current['language'] = m.group(1)
         elif 'Language:' in line and not current['language']:
-            m = re.search(r'Language: (\S+)', line)
+            m = re.search(r'Language: ([A-Za-z0-9-]+)\s*$', line)
             if m:
                 current['language'] = m.group(1)
         if 'Codec ID:' in line:

@@ -153,6 +153,24 @@ class MkvinfoParsingTests(unittest.TestCase):
         self.assertEqual(subs[0]["codec"], "S_TEXT/UTF8")
         self.assertEqual(subs[0]["name"], "Simplified")
 
+    def test_language_with_path_characters_is_ignored(self):
+        # The language tag ends up in output file names; a crafted file must
+        # not be able to smuggle path separators or '..' into them.
+        from ui.gui_support import parse_mkvinfo_tracks
+        from ui.cli import CLIHandler
+        out = (
+            "|  + Track number: 3 (track ID for mkvmerge & mkvextract: 2)\n"
+            "|  + Track type: subtitles\n"
+            "|  + Language: chi\n"
+            "|  + Language (IETF BCP 47): ../../../tmp/evil\n")
+        self.assertEqual(parse_mkvinfo_tracks(out)[0]["language"], "chi")
+        cli_tracks = CLIHandler._parse_mkvinfo_tracks(None, out)
+        self.assertEqual(cli_tracks[0]["language"], "chi")
+        out2 = ("|  + Track number: 3 (track ID for mkvmerge & mkvextract: 2)\n"
+                "|  + Track type: subtitles\n"
+                "|  + Language: a/../b\n")
+        self.assertEqual(parse_mkvinfo_tracks(out2)[0]["language"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

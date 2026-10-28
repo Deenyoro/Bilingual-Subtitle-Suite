@@ -2035,11 +2035,11 @@ LIST TRACKS:
 
             # Language (prefer IETF BCP 47)
             if 'Language (IETF BCP 47):' in line:
-                match = re.search(r'Language \(IETF BCP 47\): (\S+)', line)
+                match = re.search(r'Language \(IETF BCP 47\): ([A-Za-z0-9-]+)\s*$', line)
                 if match:
                     current_track['language'] = match.group(1)
             elif 'Language:' in line and not current_track['language']:
-                match = re.search(r'Language: (\S+)', line)
+                match = re.search(r'Language: ([A-Za-z0-9-]+)\s*$', line)
                 if match:
                     current_track['language'] = match.group(1)
 

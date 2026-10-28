@@ -5,6 +5,7 @@ Backup File Manager
 This module provides utilities for managing backup files created during subtitle processing.
 """
 
+import glob
 import os
 import time
 from pathlib import Path
@@ -76,14 +77,12 @@ class BackupManager:
         """
         # Find all backup files for this original file
         parent_dir = original_file.parent
-        base_pattern = original_file.name + "*.bak*"
+        # Only this file's own backups (<name>*.bak*). Matching on the stem
+        # as well picked up other files' backups (e.g. "Movie.en.srt.bak" for
+        # "Movie.srt") and pruned them. Escape glob characters such as "[".
+        base_pattern = glob.escape(original_file.name) + "*.bak*"
 
         backup_files = list(parent_dir.glob(base_pattern))
-        # Also check for .srt.bak, .ass.bak patterns
-        backup_files.extend(parent_dir.glob(original_file.stem + "*.bak*"))
-
-        # Deduplicate
-        backup_files = list(set(backup_files))
 
         if len(backup_files) <= self.max_backups:
             return
